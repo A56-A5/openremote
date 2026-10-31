@@ -91,8 +91,8 @@ export default function Setup() {
         <p className="hint" style={{ margin: 0 }}>
           Take the pairing code from step 3 → switch to the <b>pair</b> tab → paste it. Your sessions and
           activity show up live. Everyday commands: <code>openremote status</code>,{" "}
-          <code>openremote code</code> (fresh pairing code), <code>openremote stop</code>. There's no
-          slash-command on purpose — it would waste an LLM turn doing what the shell does free.
+          <code>openremote code</code> (fresh pairing code), <code>openremote stop</code> — or the native{" "}
+          <code>/opencode-remote</code> slash command inside OpenCode (runs locally, zero LLM turns).
         </p>
       </div>
     </div>
