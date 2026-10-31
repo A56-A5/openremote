@@ -204,14 +204,25 @@ async function configCmd(rest: string[]) {
 }
 
 async function install() {
-  const src = join(__dirname, "..", "..", "commands", "opencode-remote.md");
-  const { mkdirSync, copyFileSync } = await import("node:fs");
+  const { mkdirSync, cpSync, writeFileSync, chmodSync } = await import("node:fs");
   const { homedir } = await import("node:os");
   const { join: j } = await import("node:path");
+  const binDir = j(homedir(), ".openremote", "bin");
+  mkdirSync(binDir, { recursive: true });
+  cpSync(join(__dirname), binDir, { recursive: true });
+  const wrapper = j(binDir, "openremote");
+  writeFileSync(wrapper, `#!/usr/bin/env bash\nexec node "${j(binDir, "cli.js")}" "$@"\n`);
+  chmodSync(wrapper, 0o755);
   const destDir = j(homedir(), ".config", "opencode", "commands");
   mkdirSync(destDir, { recursive: true });
-  copyFileSync(src, j(destDir, "opencode-remote.md"));
-  console.log("openremote: /opencode-remote command installed. Restart OpenCode to pick it up.");
+  const mdSrc = join(__dirname, "..", "..", "commands", "opencode-remote.md");
+  const { copyFileSync, existsSync } = await import("node:fs");
+  if (existsSync(mdSrc)) {
+    copyFileSync(mdSrc, j(destDir, "opencode-remote.md"));
+    console.log("openremote: /opencode-remote command installed. Restart OpenCode to pick it up.");
+  } else {
+    console.log(`openremote: binary installed to ${binDir}. Command md not found at ${mdSrc} — copy commands/opencode-remote.md into ~/.config/opencode/commands/ manually.`);
+  }
 }
 
 async function main() {
