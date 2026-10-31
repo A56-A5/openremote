@@ -1,34 +1,22 @@
 import { useState } from "react";
 
-const SUPA_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "https://YOUR_PROJECT.supabase.co";
-const SUPA_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "YOUR_PUBLISHABLE_KEY";
+const INSTALL_CMD = "curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash";
 
 const STEPS: { title: string; note: string; cmds: string[] }[] = [
   {
-    title: "1 · grab the bridge",
-    note: "runs on your computer, next to OpenCode. one-time setup (~2 min).",
-    cmds: [
-      "git clone https://github.com/A56-A5/openremote.git && cd openremote",
-      "npm install && npm run build -w plugin",
-    ],
+    title: "1 · install the bridge",
+    note: "one line. clones, builds, configures — safe to re-run anytime. (needs node ≥ 20 + git)",
+    cmds: [INSTALL_CMD],
   },
   {
-    title: "2 · point it at the shared notebook",
-    note: "copy-paste as-is — already filled in with this site's project.",
-    cmds: [
-      `node plugin/dist/cli.js config --url ${SUPA_URL} --key ${SUPA_KEY}`,
-      "node plugin/dist/cli.js install   # adds /opencode-remote to OpenCode",
-    ],
-  },
-  {
-    title: "3 · wake up your agent",
-    note: "in your project folder — the worker attaches to this server.",
+    title: "2 · wake up your agent",
+    note: "in your project folder — the bridge attaches to this server.",
     cmds: ["opencode serve"],
   },
   {
-    title: "4 · go remote",
+    title: "3 · go remote",
     note: "new terminal. prints your personal PAIRING CODE (valid 15 min).",
-    cmds: ["node ~/.openremote/bin/openremote start", "opencode   # optional: your normal TUI, it joins the served instance"],
+    cmds: ["openremote start", "openremote   # optional: your normal TUI joins the served instance"],
   },
 ];
 
@@ -101,10 +89,10 @@ export default function Setup() {
           then, on this page ↩
         </h3>
         <p className="hint" style={{ margin: 0 }}>
-          Take the pairing code from step 4 → switch to the <b>pair</b> tab → paste it. Your sessions and
-          activity show up live. Commands on your computer:{" "}
-          <code>openremote status</code>, <code>openremote code</code> (fresh pairing code),{" "}
-          <code>openremote stop</code>.
+          Take the pairing code from step 3 → switch to the <b>pair</b> tab → paste it. Your sessions and
+          activity show up live. Everyday commands: <code>openremote status</code>,{" "}
+          <code>openremote code</code> (fresh pairing code), <code>openremote stop</code>. There's no
+          slash-command on purpose — it would waste an LLM turn doing what the shell does free.
         </p>
       </div>
     </div>
