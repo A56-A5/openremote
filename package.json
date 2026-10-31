@@ -1,0 +1,16 @@
+{
+  "name": "openremote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Database-driven remote monitoring and interaction for local OpenCode agents",
+  "workspaces": [
+    "plugin",
+    "web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w plugin && npm run build -w web",
+    "start-worker": "npm run start -w plugin"
+  },
+  "license": "MIT"
+}
