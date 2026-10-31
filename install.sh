@@ -36,13 +36,8 @@ cd "$SRC"
 npm install --no-audit --no-fund --loglevel=error >&2
 npm run build -w plugin >&2
 
-say "installing CLI to ~/.openremote/bin"
-mkdir -p "$HOME_DIR/bin"
-cat > "$HOME_DIR/bin/openremote" <<EOF
-#!/usr/bin/env bash
-exec node "$SRC/plugin/dist/cli.js" "\$@"
-EOF
-chmod +x "$HOME_DIR/bin/openremote"
+say "installing CLI + native /opencode-remote command"
+node "$SRC/plugin/dist/cli.js" install
 
 say "configuring (keeps any existing pairing)"
 "$HOME_DIR/bin/openremote" config --url "$SUPA_URL" --key "$SUPA_KEY" >/dev/null
@@ -53,8 +48,12 @@ case ":$PATH:" in
     RC=""
     [ -f "$HOME/.zshrc" ] && RC="$HOME/.zshrc"
     [ -z "$RC" ] && RC="$HOME/.bashrc"
-    printf '\n# openremote\nexport PATH="$HOME/.openremote/bin:$PATH"\n' >> "$RC"
-    say "added ~/.openremote/bin to PATH in $RC (restart your terminal)"
+    if ! grep -qs "\.openremote/bin" "$RC"; then
+      printf '\n# openremote\nexport PATH="$HOME/.openremote/bin:$PATH"\n' >> "$RC"
+      say "added ~/.openremote/bin to PATH in $RC (restart your terminal)"
+    else
+      say "PATH entry already present in $RC"
+    fi
     ;;
 esac
 

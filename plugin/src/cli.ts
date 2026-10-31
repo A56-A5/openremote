@@ -203,12 +203,13 @@ async function configCmd(rest: string[]) {
   console.log("openremote: config saved.");
 }
 
-async function install(rest: string[]) {
-  const { mkdirSync, writeFileSync, chmodSync, copyFileSync, existsSync } = await import("node:fs");
+async function install() {
+  const { mkdirSync, writeFileSync, chmodSync, copyFileSync, existsSync, readFileSync } = await import("node:fs");
   const { homedir } = await import("node:os");
-  const { join: j } = await import("node:path");
+  const { join: j, dirname } = await import("node:path");
   const repoRoot = join(__dirname, "..", "..");
   const cliPath = join(repoRoot, "plugin", "dist", "cli.js");
+  const tuiPluginSrc = join(repoRoot, "plugin", "dist", "tui.js");
   if (!existsSync(cliPath)) {
     throw new Error(`CLI not built — run \`npm install && npm run build -w plugin\` in ${repoRoot} first.`);
   }
@@ -217,15 +218,27 @@ async function install(rest: string[]) {
   const wrapper = j(binDir, "openremote");
   writeFileSync(wrapper, `#!/usr/bin/env bash\nexec node "${cliPath}" "$@"\n`);
   chmodSync(wrapper, 0o755);
-  console.log(`openremote: CLI installed — use \`openremote start\` (restart your terminal if needed).`);
-  if (rest.includes("--with-command")) {
-    const destDir = j(homedir(), ".config", "opencode", "commands");
-    mkdirSync(destDir, { recursive: true });
-    const mdSrc = join(repoRoot, "commands", "opencode-remote.md");
-    if (existsSync(mdSrc)) {
-      copyFileSync(mdSrc, j(destDir, "opencode-remote.md"));
-      console.log("openremote: /opencode-remote slash command also installed (costs one LLM turn per use). Restart OpenCode.");
+  console.log("openremote: CLI installed — use `openremote` in any terminal.");
+  if (existsSync(tuiPluginSrc)) {
+    const pluginPath = j(binDir, "tui-plugin.js");
+    copyFileSync(tuiPluginSrc, pluginPath);
+    const cfgPath = j(homedir(), ".config", "opencode", "opencode.json");
+    let cfg: Record<string, unknown> = {};
+    if (existsSync(cfgPath)) {
+      try {
+        cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+      } catch {
+        throw new Error(`could not parse ${cfgPath} — add "${pluginPath}" to its "plugin" array manually.`);
+      }
     }
+    const plugins = Array.isArray(cfg.plugin) ? (cfg.plugin as unknown[]) : [];
+    if (!plugins.includes(pluginPath)) {
+      plugins.push(pluginPath);
+      cfg.plugin = plugins;
+      mkdirSync(dirname(cfgPath), { recursive: true });
+      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
+    }
+    console.log("openremote: native /opencode-remote slash command registered (zero LLM). Restart OpenCode to pick it up.");
   }
 }
 
@@ -245,7 +258,7 @@ async function main() {
       return;
     }
     case "config": return configCmd(args);
-    case "install": return install(args);
+    case "install": return install();
     default:
       console.log(`openremote — remote bridge for OpenCode
 
@@ -256,7 +269,7 @@ Usage:
   openremote code                                        mint a fresh pairing code for the web app
   openremote pair <code>                                 pair with a code minted elsewhere
   openremote config [--url U] [--key K] [--server U]     set config
-  openremote install                                     install /opencode-remote command`);
+  openremote install                                     install CLI + native /opencode-remote command`);
   }
 }
 

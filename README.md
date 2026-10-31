@@ -20,7 +20,7 @@ No hosted backend — a Supabase project (Postgres + Realtime + Storage) is the 
 | `plugin/`   | `openremote` CLI + persistent worker (start/stop/status/pair) |
 | `web/`      | React + Vite front end — paper-notebook UI, realtime feed    |
 | `supabase/` | `schema.sql` — tables, RLS, pairing RPC, storage bucket      |
-| `commands/` | `/opencode-remote` command file for OpenCode                 |
+| `plugin/src/tui.ts` | native `/opencode-remote` TUI command (zero LLM)          |
 
 ## Setup
 
@@ -46,10 +46,10 @@ openremote status            worker + session state
 openremote code              mint a fresh pairing code for the web app
 openremote pair <CODE>       pair with a code minted elsewhere
 openremote config ...        set URL/keys/server
-openremote install           install the CLI wrapper (--with-command for the optional slash command)
+openremote install           install CLI wrapper + register the native slash command
 ```
 
-There is deliberately no required slash command — `/opencode-remote` (install with `--with-command`) routes through the LLM and wastes a turn doing what the shell does free.
+/opencode-remote (alias /or) is a native TUI plugin command — it runs the CLI locally and shows the result in a toast, no LLM turn involved. It opens a small menu: start / stop / status / pairing code.
 
 ## Data lifecycle
 

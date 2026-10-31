@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.47.0"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.18",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
