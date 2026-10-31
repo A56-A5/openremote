@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export default function Pair() {
+export default function Pair({ bare }: { bare?: boolean }) {
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,25 +35,14 @@ export default function Pair() {
     setMsg("Paired! Opening your notebook…");
   }
 
-  return (
-    <div className="shell">
-      <div className="topbar">
-        <div className="brand">
-          <span style={{ fontSize: "1.6rem" }}>📒</span>
-          <div>
-            <h1>OpenRemote</h1>
-            <small>field notes for your agents</small>
-          </div>
-        </div>
-      </div>
-
+  const body = (
       <div style={{ position: "relative" }}>
-        <div className="note blue" style={{ maxWidth: 480, margin: "30px auto 0", padding: "28px 24px" }}>
+        <div className="note blue" style={{ maxWidth: 480, margin: "10px auto 0", padding: "28px 24px" }}>
           <span className="tape" />
           <h2 className="hand" style={{ margin: "0 0 4px", fontSize: "2rem" }}>pair your device</h2>
           <p className="hint">
             On your computer, run <code>/opencode-remote start</code>. It prints a pairing code —
-            scribble it in below.
+            scribble it in below. First time? See the <b>setup guide</b> tab.
           </p>
           <form onSubmit={pair}>
             <label className="lbl">pairing code</label>
@@ -86,6 +75,21 @@ export default function Pair() {
           </p>
         </div>
       </div>
+  );
+
+  if (bare) return body;
+  return (
+    <div className="shell">
+      <div className="topbar">
+        <div className="brand">
+          <span style={{ fontSize: "1.6rem" }}>📒</span>
+          <div>
+            <h1>OpenRemote</h1>
+            <small>field notes for your agents</small>
+          </div>
+        </div>
+      </div>
+      {body}
     </div>
   );
 }
