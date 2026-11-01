@@ -169,8 +169,11 @@ as $$
   );
 $$;
 
-revoke execute on function public.is_linked_viewer(uuid) from public, anon;
-grant execute on function public.is_linked_viewer(uuid) to authenticated;
+-- Policy predicates execute as the querying role, so even anon must be able
+-- to call this helper (it returns false for anon: auth.uid() is null, and the
+-- links read is filtered). It exposes no rows and is not an RPC.
+revoke execute on function public.is_linked_viewer(uuid) from public;
+grant execute on function public.is_linked_viewer(uuid) to anon, authenticated;
 
 -- Owner: full access. Viewer: SELECT only. (Applied per table below.)
 drop policy if exists "machines owner"      on public.machines;
@@ -218,7 +221,6 @@ create policy "prompts viewer insert" on public.prompts for insert
     and claimed_by is null
     and lease_until is null
     and error is null
-    and char_length(text) <= 20000
   );
 
 drop policy if exists "permissions owner"      on public.permissions;
@@ -273,7 +275,7 @@ create or replace function public.create_pairing()
 returns table (code text, expires_at timestamptz)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_owner   uuid := auth.uid();
@@ -288,12 +290,15 @@ begin
   end if;
 
   -- keep the table small: drop this owner's spent/expired rows first
+  -- (pairings.expires_at is qualified: it shares a name with a RETURNS TABLE
+  -- output column, and a bare reference would be ambiguous to plpgsql)
   delete from public.pairings
    where owner_id = v_owner
-     and (used_at is not null or expires_at < now() - interval '1 day');
+     and (used_at is not null or pairings.expires_at < now() - interval '1 day');
 
   if (select count(*) from public.pairings
-       where owner_id = v_owner and used_at is null and expires_at > now()) >= 5 then
+       where owner_id = v_owner and used_at is null
+         and pairings.expires_at > now()) >= 5 then
     raise exception 'too many active pairing codes';
   end if;
 
@@ -320,7 +325,7 @@ create or replace function public.claim_pairing(p_code text)
 returns table (status text, owner_id uuid)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_viewer uuid := auth.uid();
@@ -356,7 +361,7 @@ begin
   end if;
 
   for v_row in
-    select id, owner_id, code_hash, expires_at, used_at
+    select id, pairings.owner_id, code_hash, expires_at, used_at
       from public.pairings
      where created_at > now() - interval '1 day'
      order by created_at desc
@@ -418,7 +423,9 @@ begin
    where id = p_id
      and status = 'pending'
      and (owner_id = v_uid or public.is_linked_viewer(owner_id))
-  returning session_id, opencode_permission_id into v_row;
+  -- RETURNS TABLE output columns are in scope as variables; qualify the
+  -- RETURNING columns or plpgsql reports them as ambiguous.
+  returning permissions.session_id, permissions.opencode_permission_id into v_row;
 
   if v_row is null then
     raise exception 'permission not pending';

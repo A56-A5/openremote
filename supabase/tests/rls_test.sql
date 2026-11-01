@@ -197,6 +197,9 @@ end $$;
 -- ===========================================================================
 reset role;
 set local role anon;
+-- drop the viewer1 jwt left over from section 2 so auth.uid() is null here
+select set_config('request.jwt.claims', '', true);
+select set_config('request.jwt.claim.sub', '', true);
 select pg_temp.expect(not exists (select 1 from public.sessions), 'anon sees no sessions');
 select pg_temp.expect(not exists (select 1 from public.machines), 'anon sees no machines');
 do $$
