@@ -1,26 +1,40 @@
 # 📒 OpenRemote
 
-Lightweight, database-driven remote monitoring & interaction for local OpenCode agents.
-No hosted backend — a Supabase project (Postgres + Realtime + Storage) is the sync layer; a tiny local worker bridges your machine; a scrapbook-styled web app is your remote window.
+Lightweight, database-driven remote monitoring & control for local OpenCode agents.
+No hosted backend, no passwords - a Supabase project (Postgres + Auth + Realtime) is the
+rendezvous point; a tiny local worker bridges your machine with outbound-only connections;
+a scrapbook-styled web app on your phone is the remote window.
 
 ```
-┌─────────────┐   SSE/REST    ┌──────────────┐   Postgres/Realtime   ┌──────────┐
-│ OpenCode    │◄─────────────►│ openremote   │◄─────────────────────►│ Supabase │
-│ (local)     │               │ worker (CLI) │                       └────▲─────┘
-└─────────────┘               └──────────────┘                            │
-                                                              ┌──────────┴─────────┐
-                                                              │ web app (mobile)   │
-                                                              └────────────────────┘
+┌─────────────┐   SSE / REST    ┌──────────────┐   HTTPS (outbound only)   ┌──────────┐
+│ OpenCode    │◄───────────────►│ openremote   │◄────────────────────────►│ Supabase │
+│ (local)     │                 │ worker (CLI) │   Postgres + Auth        └────▲─────┘
+└─────────────┘                 └──────────────┘   + Realtime                     │
+                                                          ┌──────────────────────┴───┐
+                                                          │ web app (phone browser)  │
+                                                          └──────────────────────────┘
 ```
 
 ## Pieces
 
-| Path        | What                                                       |
-| ----------- | ---------------------------------------------------------- |
-| `plugin/`   | `openremote` CLI + persistent worker (start/stop/status/pair) |
-| `web/`      | React + Vite front end — paper-notebook UI, realtime feed    |
-| `supabase/` | `schema.sql` — tables, RLS, pairing RPC, storage bucket      |
-| `plugin/src/tui.ts` | native `/opencode-remote` TUI command (zero LLM)          |
+| Path                  | What                                                          |
+| --------------------- | ------------------------------------------------------------- |
+| `plugin/`             | `openremote` CLI + persistent worker (connect/stop/status/code) |
+| `plugin/src/tui.ts`   | native `/openremote` TUI command (aliases `/or` - zero LLM)   |
+| `web/`                | React + Vite front end - paper-notebook UI, single websocket  |
+| `supabase/migrations/`| `20261101000000_openremote_v2.sql` - schema, RLS, RPCs        |
+| `supabase/tests/`     | `rls_test.sql` - RLS / RPC test suite (run in SQL editor)     |
+| `test/`               | offline integration harness (mock OpenCode + fake Supabase)   |
+
+## How pairing works (no passwords anywhere)
+
+1. `openremote connect` → the worker signs in **anonymously** to Supabase and syncs your
+   local sessions (7-day window, subsessions filtered out).
+2. `openremote code` mints `XXXX-XXXX` (Crockford base32, 10 minutes, single use, bcrypt
+   hash in the DB, throttled per-IP failures).
+3. On your phone: pair tab → code → `claim_pairing` links your (also anonymous) browser
+   account to that computer. Row-level security keeps notebooks separate - every row
+   carries `owner_id`, viewers only see their owner's rows.
 
 ## Setup
 
@@ -30,33 +44,73 @@ No hosted backend — a Supabase project (Postgres + Realtime + Storage) is the 
 curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
 ```
 
-Then: `opencode serve` in your project → `openremote start` in another terminal → enter the printed pairing code at https://openremote-link.vercel.app.
+The installer clones, builds, registers `openremote` + the `/openremote` slash command, and
+configures the default Supabase project. Then:
+
+```bash
+cd your-project && openremote connect   # worker starts (spawns `opencode serve` if none)
+openremote code                         # prints your pairing code
+# phone: https://openremote-link.vercel.app → pair tab → code
+```
 
 **Owners** (host your own):
-1. Supabase project → run `supabase/schema.sql`; turn OFF email confirmations (Auth → Providers → Email) so users can self-pair.
-2. Deploy `web/` anywhere static (Vercel: root dir `web`, env `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`).
-3. Edit `install.sh` defaults (or ship env overrides) with your project's URL + publishable key.
+
+1. Supabase project → SQL editor → run `supabase/migrations/20261101000000_openremote_v2.sql`
+   (fresh project; one paste). Then run `supabase/tests/rls_test.sql` to verify the policies.
+2. Authentication → Providers → enable **Anonymous sign-ins** (the machine and the phone each
+   sign in anonymously). If your project enforces CAPTCHA (Turnstile/hCaptcha) on anonymous
+   sign-in, disable it - the web app surfaces the error but cannot solve challenges.
+3. Deploy `web/` anywhere static (Vercel: root dir `web`, env `VITE_SUPABASE_URL` +
+   `VITE_SUPABASE_ANON_KEY`).
+4. Point the installer at your project (or `openremote config --url … --key … --web-url …`):
+
+```bash
+OPENREMOTE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+OPENREMOTE_SUPABASE_ANON_KEY=YOUR_ANON_KEY \
+curl -fsSL …/install.sh | bash
+```
 
 ## Commands
 
 ```
-openremote start             start the local worker (idempotent — one worker only)
-openremote stop              stop worker, mark sessions offline
-openremote status            worker + session state
-openremote code              mint a fresh pairing code for the web app
-openremote pair <CODE>       pair with a code minted elsewhere
-openremote config ...        set URL/keys/server
-openremote install           install CLI wrapper + register the native slash command
+openremote connect [--url U] [--key K] [--server U]   start the local worker
+openremote stop                                       stop worker + managed serve
+openremote status [--json]                            connection, sessions, viewers
+openremote code                                       mint a pairing code (10 min, single use)
+openremote unlink [viewer_id]                         revoke linked phone(s)
+openremote config [--url U] [--key K] [--server U]    set config
+openremote install                                    install CLI + /openremote TUI command
 ```
 
-/opencode-remote (alias /or) is a native TUI plugin command — it runs the CLI locally and shows the result in a toast, no LLM turn involved. It opens a small menu: start / stop / status / pairing code.
+`/openremote` (alias `/or`) inside OpenCode is a native TUI plugin command - it runs the CLI
+locally and shows the result in a dialog, **zero LLM turns**. It handles start/stop, fresh
+pairing codes, unlink, and refresh; when unpaired it runs `connect` for you.
 
 ## Data lifecycle
 
-- Worker sweeps hourly: events older than `retention_days` (default 7) and completed/failed prompts + their storage objects older than the window are removed.
-- **Pending / processing prompts are never deleted.**
-- Web app: per-session wipe + manual clears in Settings.
+- Worker sweeps hourly: messages / file activity / delivered prompts / applied permissions
+  older than `retention_days` (default 7) are removed.
+- **Pending prompts are never deleted**; a permission pending >15 min is marked `expired`
+  and the session status recomputed.
+- Every tab opens with a full `resync` (statuses + recent messages), so nothing depends on
+  realtime being available - the websocket is an optimization, REST polling is the backbone.
+
+## Development
+
+```bash
+npm install
+npm run build -w plugin   # tsc → plugin/dist (worker.js, cli.js, tui.js)
+npm run build -w web      # tsc -b && vite build
+node test/worker-smoke.mjs  # full offline pipeline (mock OpenCode + fake Supabase)
+```
+
+Worker poll intervals are env-tunable for tests: `OPENREMOTE_TICK_MS`,
+`OPENREMOTE_FILE_FLUSH_MS`, `OPENREMOTE_CLAIM_IDLE_MS`, `OPENREMOTE_CLAIM_POLL_MS`,
+`OPENREMOTE_PERM_POLL_MS`, `OPENREMOTE_HEARTBEAT_MS`, `OPENREMOTE_SWEEP_MS`,
+`OPENREMOTE_AUTH_REFRESH_MS`.
 
 ## Design
 
-Digital scrapbook: warm paper grain, sticky notes, masking tape, handwritten headings (Caveat) over monospace body (Space Mono), pastel palette, torn-note corners. Every screen, same aesthetic.
+Digital scrapbook: warm paper grain, sticky notes, masking tape, handwritten headings (Caveat)
+over monospace body (Space Mono), pastel palette, torn-note corners. Every screen, same
+aesthetic.

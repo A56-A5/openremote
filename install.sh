@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenRemote installer — puts the openremote CLI on your machine, ready to pair.
+# OpenRemote installer - puts the openremote CLI on your machine, ready to pair.
 # Usage:  curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
 # Overrides: OPENREMOTE_SUPABASE_URL, OPENREMOTE_SUPABASE_ANON_KEY, OPENREMOTE_REPO, OPENREMOTE_SRC, OPENREMOTE_HOME
 set -euo pipefail
@@ -14,7 +14,7 @@ say() { printf '  \033[38;5;108m➜\033[0m %s\n' "$*"; }
 die() { printf '  \033[38;5;131m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 say "checking prerequisites"
-command -v node >/dev/null 2>&1 || die "node >= 20 is required — install from https://nodejs.org"
+command -v node >/dev/null 2>&1 || die "node >= 20 is required - install from https://nodejs.org"
 command -v git  >/dev/null 2>&1 || die "git is required"
 node -e 'process.exit(parseInt(process.version.slice(1)) >= 20 ? 0 : 1)' || die "node >= 20 is required (found $(node -v))"
 
@@ -36,7 +36,7 @@ cd "$SRC"
 npm install --no-audit --no-fund --loglevel=error >&2
 npm run build -w plugin >&2
 
-say "installing CLI + native /opencode-remote command"
+say "installing CLI + native /openremote command"
 node "$SRC/plugin/dist/cli.js" install
 
 say "configuring (keeps any existing pairing)"
@@ -57,7 +57,7 @@ case ":$PATH:" in
     ;;
 esac
 
-printf '\n\033[38;5;180m✓ ready\033[0m — next steps:\n'
-printf '   1. cd your-project && opencode serve\n'
-printf '   2. new terminal:  openremote start      # prints your pairing code\n'
-printf '   3. phone:         https://openremote-link.vercel.app → pair tab → code\n\n'
+printf '\n\033[38;5;180m✓ ready\033[0m - next steps:\n'
+printf '   1. cd your-project && openremote connect   # starts the worker (spawns opencode serve if none)\n'
+printf '   2. openremote code                         # prints an 8-letter code (10 min, once)\n'
+printf '   3. phone:  https://openremote-link.vercel.app → pair tab → enter the code\n\n'
