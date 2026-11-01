@@ -44,7 +44,7 @@ const DEFAULTS: StoredState = {
   supabaseAnonKey: process.env.OPENREMOTE_SUPABASE_ANON_KEY ?? "",
   webUrl: process.env.OPENREMOTE_WEB_URL ?? DEFAULT_WEB_URL,
   retentionDays: 7,
-  maxSessions: 20,
+  maxSessions: 1,
 };
 
 export function ensureHome(): void {

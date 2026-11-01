@@ -159,7 +159,7 @@ async function writeMessage(
       truncated: capped,
       created_at: new Date(info.completedAt).toISOString(),
     },
-    { onConflict: "id", ignoreDuplicates: true }
+    { onConflict: "id" }
   );
   if (error) console.error("writeMessage:", error.message);
 }
@@ -200,17 +200,20 @@ export async function flushFileActivity(ctx: WorkerContext): Promise<void> {
 // registration / resync
 // ---------------------------------------------------------------------------
 
-/** Top-level sessions updated in the last 7 days, capped at state.maxSessions. */
+/** Single latest session only - fixates OpenRemote to 1 session. */
 export async function registerSessions(ctx: WorkerContext, serverUrl: string): Promise<string[]> {
   const sessions = await listSessions(serverUrl);
-  const cutoff = Date.now() - 7 * 86_400_000;
   const recent = sessions
     .filter((s) => !s.parentID)
-    .filter((s) => (s.time?.updated ?? 0) >= cutoff)
     .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
-    .slice(0, Math.max(1, ctx.state.maxSessions));
+    .slice(0, 1);
 
   for (const s of recent) await upsertSessionRow(ctx, s);
+
+  // Keep only this 1 single active session in DB
+  if (recent[0]) {
+    await ctx.sb.from("sessions").delete().eq("owner_id", ctx.ownerId).neq("id", recent[0].id);
+  }
 
   const ids = recent.map((s) => s.id);
   if (ids.length) {
@@ -428,16 +431,35 @@ async function handleMessageUpdated(
   buf.role = role;
   buf.completedAt = completedAt;
 
+  let text = joinTexts(buf);
+
+  // If text is still empty, query OpenCode REST API for the message parts
+  if (!text) {
+    try {
+      const msgs = await sessionMessages(ctx.serverUrl, sessionId, 10);
+      const found = msgs.find((m) => m.info.id === id);
+      if (found) {
+        const partsText = (found.parts ?? [])
+          .filter((p) => p.type === "text" && typeof p.text === "string")
+          .map((p) => p.text as string)
+          .join("");
+        if (partsText) {
+          buf.texts = [partsText];
+          text = partsText;
+        }
+      }
+    } catch {}
+  }
+
   if (!ctx.dedupe.consider({ id, role, completedAt })) {
     // already written; patch it if we stored it empty and text arrived later
-    if (buf.wroteEmpty && joinTexts(buf)) {
-      await writeMessage(ctx, { id, sessionId, role, completedAt }, joinTexts(buf));
+    if (buf.wroteEmpty && text) {
+      await writeMessage(ctx, { id, sessionId, role, completedAt }, text);
       buf.wroteEmpty = false;
     }
     return;
   }
 
-  const text = joinTexts(buf);
   await writeMessage(ctx, { id, sessionId, role, completedAt }, text);
   buf.wroteEmpty = text.length === 0;
   ctx.messages.set(id, buf);
@@ -451,7 +473,7 @@ function handlePartUpdated(ctx: WorkerContext, part: Record<string, unknown>): v
   ctx.touch(sessionId);
 
   if (type === "text" && messageId) {
-    const text = part.text as string | undefined;
+    const text = (part.text ?? part.delta) as string | undefined;
     if (!text) return;
     const buf =
       ctx.messages.get(messageId) ?? ({ sessionId, role: "assistant", texts: [] } as MsgBuf);
@@ -533,6 +555,21 @@ export async function handleEvent(ctx: WorkerContext, ev: OcEvent): Promise<void
       const sessionId = (props.sessionID as string | undefined) ?? propSessionId(ev);
       if (!sessionId) return;
       await flushFileActivity(ctx);
+      // Flush latest messages from OpenCode to make sure assistant answers and user prompts are fully synced
+      try {
+        const msgs = await sessionMessages(ctx.serverUrl, sessionId, 5);
+        for (const m of msgs) {
+          const mText = (m.parts ?? [])
+            .filter((p) => p.type === "text" && typeof p.text === "string")
+            .map((p) => p.text as string)
+            .join("");
+          if (mText) {
+            const completedAt =
+              m.info.role === "user" ? m.info.time?.created ?? Date.now() : m.info.time?.completed ?? Date.now();
+            await writeMessage(ctx, { id: m.info.id, sessionId, role: m.info.role, completedAt }, mText);
+          }
+        }
+      } catch {}
       if (!hasPendingPermission(ctx, sessionId)) await setStatus(ctx, sessionId, "done");
       else ctx.working.delete(sessionId);
       return;
@@ -555,6 +592,43 @@ export async function handleEvent(ctx: WorkerContext, ev: OcEvent): Promise<void
     case "message.part.updated": {
       const part = props.part as Record<string, unknown> | undefined;
       if (part) handlePartUpdated(ctx, part);
+      return;
+    }
+    case "message.part.delta": {
+      const part = (props.part ?? props) as Record<string, unknown> | undefined;
+      if (part) handlePartUpdated(ctx, part);
+      return;
+    }
+    case "session.next.text.delta": {
+      const p = props as { assistantMessageID?: string; sessionID?: string; delta?: string };
+      if (p.assistantMessageID && p.delta) {
+        handlePartUpdated(ctx, {
+          type: "text",
+          sessionID: p.sessionID,
+          messageID: p.assistantMessageID,
+          text: p.delta,
+        });
+      }
+      return;
+    }
+    case "session.next.text.ended": {
+      const p = props as { assistantMessageID?: string; sessionID?: string; text?: string };
+      if (p.assistantMessageID && p.text) {
+        const buf = ctx.messages.get(p.assistantMessageID) ?? {
+          sessionId: p.sessionID ?? "",
+          role: "assistant",
+          texts: [],
+        };
+        buf.texts = [p.text];
+        ctx.messages.set(p.assistantMessageID, buf);
+        if (buf.completedAt) {
+          await writeMessage(
+            ctx,
+            { id: p.assistantMessageID, sessionId: buf.sessionId, role: buf.role, completedAt: buf.completedAt },
+            p.text
+          );
+        }
+      }
       return;
     }
     case "permission.updated":

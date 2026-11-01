@@ -279,16 +279,52 @@ async function install(): Promise<void> {
   chmodSync(wrapper, 0o755);
   console.log("openremote: CLI installed - use `openremote` in any terminal.");
 
-  if (existsSync(tuiPluginSrc)) {
-    const ocDir = join(homedir(), ".config", "opencode");
-    const pluginDir = join(ocDir, "plugins");
-    mkdirSync(pluginDir, { recursive: true });
-    copyFileSync(tuiPluginSrc, join(pluginDir, "openremote-tui.js"));
-    try { unlinkSync(join(binDir, "tui-plugin.js")); } catch {}
+  const ocDir = join(homedir(), ".config", "opencode");
+  const cmdDir = join(ocDir, "commands");
+  mkdirSync(cmdDir, { recursive: true });
 
-    // file-path plugin entries are invalid for OpenCode's loader
-    const cfgPath = join(ocDir, "opencode.json");
-    if (existsSync(cfgPath)) {
+  const cmdContent = `---
+description: OpenRemote bridge - start worker and get phone pairing code
+---
+
+Execute the appropriate openremote command using bash:
+- If "$ARGUMENTS" is empty or "code" or "pair": run \`~/.openremote/bin/openremote code\` to ensure the bridge is running and get a pairing code.
+- If "$ARGUMENTS" is "status": run \`~/.openremote/bin/openremote status\`.
+- If "$ARGUMENTS" is "stop": run \`~/.openremote/bin/openremote stop\`.
+- Otherwise: run \`~/.openremote/bin/openremote $ARGUMENTS\`.
+
+Report the pairing code and web URL clearly.
+`;
+
+  writeFileSync(join(cmdDir, "openremote.md"), cmdContent);
+  writeFileSync(join(cmdDir, "or.md"), cmdContent);
+  console.log("openremote: native /openremote and /or commands registered in OpenCode.");
+
+  // Remove legacy/broken file from plugins/ (which is scanned as server-only and causes crashes)
+  try { unlinkSync(join(ocDir, "plugins", "openremote-tui.js")); } catch {}
+
+  // Configure TUI plugin in tui.json if tuiPluginSrc exists
+  if (existsSync(tuiPluginSrc)) {
+    const tuiDest = join(binDir, "openremote-tui.js");
+    copyFileSync(tuiPluginSrc, tuiDest);
+
+    const tuiCfgPath = join(ocDir, "tui.json");
+    let tuiCfg: Record<string, unknown> = {};
+    if (existsSync(tuiCfgPath)) {
+      try { tuiCfg = JSON.parse(readFileSync(tuiCfgPath, "utf8")); } catch {}
+    }
+    const plugins = Array.isArray(tuiCfg.plugin) ? (tuiCfg.plugin as string[]) : [];
+    const tuiSpec = `file://${tuiDest}`;
+    if (!plugins.includes(tuiSpec)) {
+      tuiCfg.plugin = [...plugins.filter((p) => typeof p === "string" && !p.includes("openremote")), tuiSpec];
+      writeFileSync(tuiCfgPath, JSON.stringify(tuiCfg, null, 2) + "\n");
+    }
+  }
+
+  // Remove invalid file-path plugin entries from opencode.json if any
+  const cfgPath = join(ocDir, "opencode.json");
+  if (existsSync(cfgPath)) {
+    try {
       const cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
       const plugins = Array.isArray(cfg.plugin) ? (cfg.plugin as unknown[]) : [];
       const cleaned = plugins.filter(
@@ -298,10 +334,8 @@ async function install(): Promise<void> {
         if (cleaned.length) cfg.plugin = cleaned;
         else delete cfg.plugin;
         writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
-        console.log("openremote: removed invalid file-path plugin entries from opencode.json.");
       }
-    }
-    console.log("openremote: native /openremote slash command installed (zero LLM). Restart OpenCode to pick it up.");
+    } catch {}
   }
 }
 

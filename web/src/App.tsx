@@ -46,8 +46,21 @@ export default function App() {
       .select("owner_id")
       .eq("viewer_id", session.user.id)
       .limit(1);
-    setOwnerId((data ?? [])[0]?.owner_id ?? null);
+    const owner = (data ?? [])[0]?.owner_id ?? null;
+    setOwnerId(owner);
     setOwnerReady(true);
+    if (owner) {
+      // Fixate to the single active session automatically
+      const { data: sess } = await supabase
+        .from("sessions")
+        .select("*")
+        .eq("owner_id", owner)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (sess && sess[0]) {
+        setView({ name: "session", session: sess[0] as SessionRow });
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -83,7 +96,7 @@ export default function App() {
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter },
+        { event: "*", schema: "public", table: "messages", filter },
         forward("messages")
       )
       .on(

@@ -84,9 +84,15 @@ export default function SessionView({
       }
       if (rowSession !== sid) return;
 
-      if (e.table === "messages" && e.type === "INSERT") {
+      if (e.table === "messages") {
         const row = e.row as unknown as MessageRow;
-        setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === row.id);
+          if (idx === -1) return [...prev, row];
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...row };
+          return next;
+        });
       } else if (e.table === "prompts") {
         setPrompts((prev) => {
           const row = e.row as unknown as PromptRow;
@@ -120,6 +126,14 @@ export default function SessionView({
       }
     });
   }, [sid]);
+
+  // Periodic poll so messages and status stay fresh without manual refresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void load();
+    }, cur.status === "working" ? 2000 : 5000);
+    return () => clearInterval(interval);
+  }, [load, cur.status]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
