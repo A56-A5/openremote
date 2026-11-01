@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { openSync, closeSync, copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { randomBytes } from "node:crypto";
-import { loadState, saveState, StoredState } from "./config.js";
+import { fileURLToPath } from "node:url";
+import { loadState, saveState, StoredState, SERVE_PID_FILE, ensureConfigDir } from "./config.js";
 import { isRunning, stopWorker, clearPid } from "./state.js";
-import { clientForState, ensureAuth, saveAuth } from "./supabase.js";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { ensureAuth } from "./supabase.js";
+import { healthCheck } from "./opencode.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const [, , cmd, ...args] = process.argv;
 
-function parseFlags(rest: string[]) {
+function parseFlags(rest: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < rest.length; i++) {
     if (rest[i].startsWith("--")) {
@@ -23,96 +24,30 @@ function parseFlags(rest: string[]) {
   return flags;
 }
 
-async function mintCode(state: StoredState, client: SupabaseClient): Promise<string> {
-  if (!state.userId || !state.email || !state.accountPassword) {
-    throw new Error("No local account yet — run `openremote start` first.");
-  }
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const code = Array.from({ length: 6 }, () => alphabet[randomBytes(1)[0] % alphabet.length]).join("");
-    const { error } = await client.from("pairing_codes").insert({
-      code,
-      user_id: state.userId,
-      email: state.email,
-      password: state.accountPassword,
-      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
-    });
-    if (!error) return code;
-    if (!String(error.message).includes("duplicate")) throw error;
-  }
-  throw new Error("Could not mint a pairing code.");
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-async function ensureAccount(state: StoredState): Promise<{ state: StoredState; client: SupabaseClient; code?: string }> {
-  const client = await clientForState(state);
-  const { data: cur } = await client.auth.getSession();
-  if (cur.session && state.userId) {
-    return { state, client };
-  }
-  if (state.email && state.accountPassword) {
-    const { error } = await client.auth.signInWithPassword({ email: state.email, password: state.accountPassword });
-    if (!error) {
-      const { data } = await client.auth.getSession();
-      const s = data.session;
-      if (s) {
-        const next = { ...state, accessToken: s.access_token, refreshToken: s.refresh_token, userId: s.user.id };
-        saveState(next);
-        return { state: next, client };
-      }
-    }
-  }
-  const email = `dev-${randomBytes(5).toString("hex")}@openremote.local`;
-  const password = randomBytes(18).toString("base64url");
-  let userId: string | undefined;
-  if (state.supabaseSecretKey) {
-    const res = await fetch(`${state.supabaseUrl}/auth/v1/admin/users`, {
-      method: "POST",
-      headers: {
-        apikey: state.supabaseSecretKey,
-        Authorization: `Bearer ${state.supabaseSecretKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ email, password, email_confirm: true }),
-    });
-    if (res.ok) {
-      userId = ((await res.json()) as any).id;
-    }
-  }
-  if (!userId) {
-    const { data, error } = await client.auth.signUp({ email, password });
-    if (error || !data.session) {
-      throw new Error(
-        `Could not create local account: ${error?.message ?? "no session returned"}. ` +
-          `If the project requires email confirmation, set a secret key: openremote config --secret <sb_secret_...>`
-      );
-    }
-    userId = data.session.user.id;
-  }
-  const { data: signIn, error: signInErr } = await client.auth.signInWithPassword({ email, password });
-  if (signInErr || !signIn.session) {
-    throw new Error(`Account created but sign-in failed: ${signInErr?.message ?? "no session"}`);
-  }
-  const next: StoredState = {
-    ...state,
-    email,
-    accountPassword: password,
-    accessToken: signIn.session.access_token,
-    refreshToken: signIn.session.refresh_token,
-    userId: signIn.session.user.id,
-  };
-  saveState(next);
-  const code = await mintCode(next, client);
-  return { state: next, client, code };
-}
+// ---------------------------------------------------------------------------
+// connect - start the background worker
+// ---------------------------------------------------------------------------
 
-async function start(flags: Record<string, string>) {
+async function connect(flags: Record<string, string>): Promise<void> {
   let state = loadState();
-  if (flags.url) state.supabaseUrl = flags.url;
-  if (flags.key) state.supabaseAnonKey = flags.key;
-  if (flags.secret) state.supabaseSecretKey = flags.secret;
-  if (flags.server) state.serverUrl = flags.server;
-  if (flags["retention-days"]) state.retentionDays = Number(flags["retention-days"]);
-  if (flags.url || flags.key || flags.secret || flags["retention-days"]) saveState(state);
+  let changed = false;
+  if (flags.url) { state.supabaseUrl = flags.url; changed = true; }
+  if (flags.key) { state.supabaseAnonKey = flags.key; changed = true; }
+  if (flags.server) { state.serverUrl = flags.server; changed = true; }
+  if (flags["retention-days"]) { state.retentionDays = Number(flags["retention-days"]); changed = true; }
+  if (changed) saveState(state);
+
+  if (!state.supabaseUrl || !state.supabaseAnonKey) {
+    console.error(
+      "openremote: Supabase not configured - pass --url/--key or set " +
+        "OPENREMOTE_SUPABASE_URL / OPENREMOTE_SUPABASE_ANON_KEY."
+    );
+    process.exit(1);
+  }
 
   const existing = isRunning();
   if (existing) {
@@ -120,156 +55,292 @@ async function start(flags: Record<string, string>) {
     return;
   }
 
-  const { state: authed, code } = await ensureAccount(state);
-  saveState(authed);
+  // owner identity (anonymous sign-in once, then refresh tokens from disk)
+  await ensureAuth(state);
 
-  const child = spawn(process.execPath, [join(__dirname, "worker.js")], {
+  const workerPath = join(__dirname, "worker.js");
+  if (!existsSync(workerPath)) {
+    throw new Error(`worker not built - run \`npm run build -w plugin\` in the repo root.`);
+  }
+  ensureConfigDir();
+  const logPath = join(homedir(), ".openremote", "worker.log");
+  mkdirSync(join(homedir(), ".openremote"), { recursive: true });
+  let fd: number;
+  try {
+    fd = openSync(logPath, "a", 0o600);
+  } catch {
+    fd = openSync(logPath, "a");
+  }
+  const child = spawn(process.execPath, [workerPath], {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", fd, fd],
   });
   child.unref();
-  await new Promise((r) => setTimeout(r, 700));
-  const pid = isRunning();
-  if (!pid) {
-    console.error("openremote: worker failed to start — check config and pairing (`openremote status`).");
-    process.exit(1);
+  closeSync(fd);
+
+  for (let i = 0; i < 12; i++) {
+    await sleep(300);
+    const pid = isRunning();
+    if (pid) {
+      console.log(`openremote: worker started (pid ${pid}) - sessions are now remotely accessible.`);
+      console.log("openremote: need a pairing code for your phone? run `openremote code`.");
+      return;
+    }
   }
-  console.log(`openremote: worker started (pid ${pid}) — sessions are now remotely accessible.`);
-  if (code) {
-    console.log(`\nPAIRING CODE (valid 15 min, shown once):  ${code}\nOpen your web app and enter it to link this notebook.\n`);
-  } else {
-    console.log("openremote: need a fresh pairing code? run `openremote code`.");
+  const tail = tailLog(logPath);
+  console.error(
+    "openremote: worker failed to start." + (tail ? `\n${tail}` : ` (see ${logPath})`)
+  );
+  process.exit(1);
+}
+
+function tailLog(path: string, lines = 8): string {
+  try {
+    return readFileSync(path, "utf8").split("\n").filter(Boolean).slice(-lines).join("\n");
+  } catch {
+    return "";
   }
 }
 
-function stop() {
-  if (stopWorker()) console.log("openremote: worker stopped — sessions marked offline.");
-  else {
+// ---------------------------------------------------------------------------
+// stop
+// ---------------------------------------------------------------------------
+
+async function stop(): Promise<void> {
+  const pid = isRunning();
+  if (pid) {
+    stopWorker();
+    for (let i = 0; i < 20; i++) {
+      if (!isRunning()) break;
+      await sleep(150);
+    }
+    if (isRunning()) {
+      try { process.kill(pid, "SIGKILL"); } catch {}
+      await sleep(200);
+    }
+    console.log("openremote: worker stopped - machine marked offline.");
+  } else {
     clearPid();
     console.log("openremote: no worker running.");
   }
+  // a serve we spawned dies with the worker; the TUI's own server never has a pid file
+  try {
+    const servePid = Number(readFileSync(SERVE_PID_FILE, "utf8").trim());
+    if (Number.isFinite(servePid) && servePid > 1) {
+      try { process.kill(servePid, "SIGTERM"); } catch {}
+      console.log(`openremote: stopped managed opencode serve (pid ${servePid}).`);
+    }
+    unlinkSync(SERVE_PID_FILE);
+  } catch {}
 }
 
-async function status() {
+// ---------------------------------------------------------------------------
+// status
+// ---------------------------------------------------------------------------
+
+async function status(flags: Record<string, string>): Promise<void> {
   const state = loadState();
   const pid = isRunning();
-  console.log(`worker: ${pid ? `running (pid ${pid})` : "stopped"}`);
-  console.log(`account: ${state.email ?? "not paired"}`);
-  console.log(`supabase: ${state.supabaseUrl || "unset"}`);
-  console.log(`opencode server: ${state.serverUrl ?? "auto-detect"}`);
-  console.log(`retention: ${state.retentionDays} days`);
-  if (pid && state.supabaseUrl && state.accessToken) {
+
+  const out: Record<string, unknown> = {
+    running: Boolean(pid),
+    pid,
+    paired: Boolean(state.ownerId),
+    machineId: state.machineId ?? null,
+    ownerId: state.ownerId ?? null,
+    serverUrl: state.serverUrl ?? null,
+    serverOk: state.serverUrl ? await healthCheck(state.serverUrl) : false,
+    supabaseConfigured: Boolean(state.supabaseUrl && state.supabaseAnonKey),
+    webUrl: state.webUrl,
+    retentionDays: state.retentionDays,
+    sessions: [] as unknown[],
+    viewers: null,
+    lastHeartbeat: null,
+    error: null as string | null,
+  };
+
+  if (state.ownerId && state.supabaseUrl && state.supabaseAnonKey) {
     try {
-      const sb = await ensureAuth(state);
-      const { data } = await sb.client.from("sessions").select("id, title, status").order("last_seen_at", { ascending: false }).limit(10);
-      console.log("sessions:");
-      for (const s of data ?? []) console.log(`  - ${s.status.padEnd(7)} ${s.id} ${s.title ?? ""}`);
-    } catch (e: any) {
-      console.log(`sessions: error — ${e?.message ?? e}`);
+      const { client } = await ensureAuth(state);
+      const [sess, links, machine] = await Promise.all([
+        client
+          .from("sessions")
+          .select("id, title, status, updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(10),
+        client.from("links").select("viewer_id").limit(100),
+        state.machineId
+          ? client.from("machines").select("last_heartbeat, name").eq("id", state.machineId).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+      out.sessions = sess.data ?? [];
+      out.viewers = links.data?.length ?? 0;
+      const hb = (machine as { data?: { last_heartbeat?: string } | null }).data;
+      out.lastHeartbeat = hb?.last_heartbeat ?? null;
+      if (sess.error) out.error = sess.error.message;
+    } catch (e) {
+      out.error = e instanceof Error ? e.message : String(e);
     }
   }
+
+  if (flags.json) {
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  console.log(`worker:        ${pid ? `running (pid ${pid})` : "stopped"}`);
+  console.log(`machine:       ${state.machineId ?? "not registered"}${state.machineName ? ` (${state.machineName})` : ""}`);
+  console.log(`owner:         ${state.ownerId ?? "no identity yet (run `openremote connect`)"}`);
+  console.log(`opencode:      ${out.serverUrl ?? "auto-detect"} ${out.serverOk ? "✓" : out.serverUrl ? "✗ unreachable" : ""}`);
+  console.log(`supabase:      ${state.supabaseUrl || "unset"}`);
+  console.log(`viewers:       ${out.viewers ?? "?"}`);
+  console.log(`retention:     ${state.retentionDays} days`);
+  if (out.error) console.log(`error:         ${out.error}`);
+  const sessions = out.sessions as Array<{ status: string; id: string; title?: string | null }>;
+  if (sessions.length) {
+    console.log("sessions:");
+    for (const s of sessions) console.log(`  ${s.status.padEnd(9)} ${s.id} ${s.title ?? ""}`);
+  } else if (pid) {
+    console.log("sessions:      none synced yet");
+  }
 }
 
-async function pair(rest: string[]) {
-  const code = rest.find((a) => !a.startsWith("--"));
-  if (!code) {
-    console.error("usage: openremote pair <code>");
-    process.exit(1);
-  }
-  let state = loadState();
-  const client = await clientForState(state);
-  const { data, error } = await client.rpc("consume_pairing", { p_code: code.trim().toUpperCase() });
+// ---------------------------------------------------------------------------
+// code / unlink / config / install
+// ---------------------------------------------------------------------------
+
+async function mintCode(): Promise<void> {
+  const state = loadState();
+  const { client } = await ensureAuth(state);
+  const { data, error } = await client.rpc("create_pairing", {});
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row?.email) {
-    console.error("openremote: invalid or expired pairing code.");
-    process.exit(1);
-  }
-  const { error: authErr } = await client.auth.signInWithPassword({ email: row.email, password: row.password });
-  if (authErr) throw authErr;
-  await saveAuth(state, client);
-  console.log(`openremote: paired as ${row.email}. Run \`openremote start\`.`);
+  if (!row?.code) throw new Error("create_pairing returned no code");
+  const expires = row.expires_at ? new Date(row.expires_at).toLocaleTimeString() : "10 min";
+  console.log(`\nPAIRING CODE (single use, valid until ${expires}):  ${row.code}`);
+  console.log(`Open ${state.webUrl} on your phone and enter it.\n`);
 }
 
-async function configCmd(rest: string[]) {
-  const flags = parseFlags(rest);
+async function unlinkCmd(rest: string[]): Promise<void> {
+  const target = rest.find((a) => !a.startsWith("--"));
   const state = loadState();
+  const { client } = await ensureAuth(state);
+
+  if (target) {
+    const { data, error } = await client.rpc("unlink", { p_viewer_id: target });
+    if (error) throw error;
+    console.log(data ? `openremote: unlinked ${target}.` : "openremote: no such viewer.");
+    return;
+  }
+
+  const { data, error } = await client.from("links").select("viewer_id");
+  if (error) throw error;
+  const viewers = data ?? [];
+  if (!viewers.length) {
+    console.log("openremote: no phones linked.");
+    return;
+  }
+  let n = 0;
+  for (const v of viewers) {
+    const { data: ok } = await client.rpc("unlink", { p_viewer_id: (v as { viewer_id: string }).viewer_id });
+    if (ok) n++;
+  }
+  console.log(`openremote: unlinked ${n} phone${n === 1 ? "" : "s"}.`);
+}
+
+async function configCmd(rest: string[]): Promise<void> {
+  const flags = parseFlags(rest);
+  const state: StoredState = loadState();
   if (flags.url) state.supabaseUrl = flags.url;
   if (flags.key) state.supabaseAnonKey = flags.key;
-  if (flags.secret) state.supabaseSecretKey = flags.secret;
   if (flags.server) state.serverUrl = flags.server;
+  if (flags["web-url"]) state.webUrl = flags["web-url"];
   if (flags["retention-days"]) state.retentionDays = Number(flags["retention-days"]);
+  if (flags["max-sessions"]) state.maxSessions = Number(flags["max-sessions"]);
+  if (flags.name) state.machineName = flags.name;
   saveState(state);
   console.log("openremote: config saved.");
 }
 
-async function install() {
-  const { mkdirSync, writeFileSync, chmodSync, copyFileSync, existsSync, readFileSync } = await import("node:fs");
-  const { homedir } = await import("node:os");
-  const { join: j, dirname } = await import("node:path");
+async function install(): Promise<void> {
   const repoRoot = join(__dirname, "..", "..");
   const cliPath = join(repoRoot, "plugin", "dist", "cli.js");
   const tuiPluginSrc = join(repoRoot, "plugin", "dist", "tui.js");
   if (!existsSync(cliPath)) {
-    throw new Error(`CLI not built — run \`npm install && npm run build -w plugin\` in ${repoRoot} first.`);
+    throw new Error(`CLI not built - run \`npm install && npm run build -w plugin\` in ${repoRoot} first.`);
   }
-  const binDir = j(homedir(), ".openremote", "bin");
+  const binDir = join(homedir(), ".openremote", "bin");
   mkdirSync(binDir, { recursive: true });
-  const wrapper = j(binDir, "openremote");
+  const wrapper = join(binDir, "openremote");
   writeFileSync(wrapper, `#!/usr/bin/env bash\nexec node "${cliPath}" "$@"\n`);
   chmodSync(wrapper, 0o755);
-  console.log("openremote: CLI installed — use `openremote` in any terminal.");
+  console.log("openremote: CLI installed - use `openremote` in any terminal.");
+
   if (existsSync(tuiPluginSrc)) {
-    const pluginPath = j(binDir, "tui-plugin.js");
-    copyFileSync(tuiPluginSrc, pluginPath);
-    const cfgPath = j(homedir(), ".config", "opencode", "opencode.json");
-    let cfg: Record<string, unknown> = {};
+    const ocDir = join(homedir(), ".config", "opencode");
+    const pluginDir = join(ocDir, "plugins");
+    mkdirSync(pluginDir, { recursive: true });
+    copyFileSync(tuiPluginSrc, join(pluginDir, "openremote-tui.js"));
+    try { unlinkSync(join(binDir, "tui-plugin.js")); } catch {}
+
+    // file-path plugin entries are invalid for OpenCode's loader
+    const cfgPath = join(ocDir, "opencode.json");
     if (existsSync(cfgPath)) {
-      try {
-        cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-      } catch {
-        throw new Error(`could not parse ${cfgPath} — add "${pluginPath}" to its "plugin" array manually.`);
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+      const plugins = Array.isArray(cfg.plugin) ? (cfg.plugin as unknown[]) : [];
+      const cleaned = plugins.filter(
+        (p) => !(typeof p === "string" && (p.includes("tui-plugin") || p.includes("openremote")))
+      );
+      if (cleaned.length !== plugins.length) {
+        if (cleaned.length) cfg.plugin = cleaned;
+        else delete cfg.plugin;
+        writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
+        console.log("openremote: removed invalid file-path plugin entries from opencode.json.");
       }
     }
-    const plugins = Array.isArray(cfg.plugin) ? (cfg.plugin as unknown[]) : [];
-    if (!plugins.includes(pluginPath)) {
-      plugins.push(pluginPath);
-      cfg.plugin = plugins;
-      mkdirSync(dirname(cfgPath), { recursive: true });
-      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
-    }
-    console.log("openremote: native /opencode-remote slash command registered (zero LLM). Restart OpenCode to pick it up.");
+    console.log("openremote: native /openremote slash command installed (zero LLM). Restart OpenCode to pick it up.");
   }
 }
 
-async function main() {
-  switch (cmd) {
-    case "start": return start(parseFlags(args));
-    case "stop": return stop();
-    case "status": return status();
-    case "pair": return pair(args);
-    case "code": {
-      const state = loadState();
-      const client = await clientForState(state);
-      const { data } = await client.auth.getSession();
-      if (data.session) await client.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
-      const code = await mintCode(state, client);
-      console.log(`PAIRING CODE (valid 15 min):  ${code}`);
-      return;
-    }
-    case "config": return configCmd(args);
-    case "install": return install();
-    default:
-      console.log(`openremote — remote bridge for OpenCode
+const HELP = `openremote - remote bridge for OpenCode
 
 Usage:
-  openremote start [--server URL] [--retention-days N]   start the local worker (creates account + pairing code)
-  openremote stop                                        stop the worker
-  openremote status                                      connection + sessions
-  openremote code                                        mint a fresh pairing code for the web app
-  openremote pair <code>                                 pair with a code minted elsewhere
-  openremote config [--url U] [--key K] [--server U]     set config
-  openremote install                                     install CLI + native /opencode-remote command`);
+  openremote connect [--url U] [--key K] [--server U]   start the local worker
+  openremote stop                                       stop worker + managed serve
+  openremote status [--json]                            connection, sessions, viewers
+  openremote code                                       mint a pairing code (10 min, single use)
+  openremote unlink [viewer_id]                         revoke linked phone(s)
+  openremote config [--url U] [--key K] [--server U]    set config
+  openremote install                                    install CLI + /openremote TUI command
+
+No passwords anywhere: the worker signs in anonymously to Supabase, the phone
+pairs with a one-time code.`;
+
+async function main(): Promise<void> {
+  switch (cmd) {
+    case "connect":
+    case "start":
+      return await connect(parseFlags(args));
+    case "stop":
+      return await stop();
+    case "status":
+      return await status(parseFlags(args));
+    case "code":
+      return await mintCode();
+    case "unlink":
+      return await unlinkCmd(args);
+    case "config":
+      return await configCmd(args);
+    case "install":
+      return await install();
+    case "help":
+    case undefined:
+      console.log(HELP);
+      return;
+    default:
+      console.error(`openremote: unknown command \`${cmd}\`\n`);
+      console.log(HELP);
+      process.exit(1);
   }
 }
 
