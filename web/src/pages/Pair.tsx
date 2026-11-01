@@ -3,8 +3,8 @@ import { supabase } from "../lib/supabase";
 
 const CLAIM_MSGS: Record<string, string> = {
   invalid: "That code doesn't look right - check the letters (no U, and I/L mean 1, O means 0).",
-  expired: "That code expired. Run `openremote code` on your computer for a fresh one.",
-  used: "That code was already used. Run `openremote code` for a new one.",
+  expired: "That code expired. Run /openremote in OpenCode (or `openremote code`) for a fresh one.",
+  used: "That code was already used. Run /openremote in OpenCode (or `openremote code`) for a fresh one.",
   throttled: "Too many tries - wait a minute and try again.",
   unauthorized: "Couldn't sign you in (anonymous sign-ins disabled?).",
 };
@@ -69,8 +69,9 @@ export default function Pair({ onPaired }: { onPaired: (ownerId: string) => void
         pair your device
       </h2>
       <p className="hint">
-        On your computer run <code>openremote code</code> (or the <code>/openremote</code> command
-        inside OpenCode). It prints an 8-letter code like <b>K7MX-4P2Q</b> - valid 10 minutes, once.
+        In OpenCode, run <code>/openremote</code> (alias <code>/or</code>). It starts the bridge
+        and immediately shows your 8-letter code like <b>K7MX-4P2Q</b>. Valid 10 minutes, once.
+        Or from a terminal: <code>openremote code</code>.
       </p>
       <form onSubmit={claim}>
         <label className="lbl">pairing code</label>
@@ -109,8 +110,8 @@ export default function Pair({ onPaired }: { onPaired: (ownerId: string) => void
       )}
       <hr className="divider" />
       <p className="hint">
-        First time? Run <code>curl -fsSL .../install.sh | bash</code> on your computer, then{" "}
-        <code>openremote connect</code>. Full steps in the <b>setup guide</b> tab.
+        First time? Run <code>curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash</code> on your computer,
+        then open OpenCode and type <code>/openremote</code>. Full steps in the <b>setup guide</b> tab.
       </p>
     </div>
   );

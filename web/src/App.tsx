@@ -19,7 +19,7 @@ export default function App() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ownerReady, setOwnerReady] = useState(false);
   const [view, setView] = useState<View>({ name: "machines" });
-  const [tab, setTab] = useState<"pair" | "setup">("pair");
+  const [tab, setTab] = useState<"pair" | "setup">("setup");
   const [channelStatus, setChannelStatus] = useState<string>("connecting");
 
   // --- auth ---------------------------------------------------------------
@@ -153,11 +153,11 @@ export default function App() {
             </div>
           </div>
           <div className="tabs">
-            <button className={`tab ${tab === "pair" ? "active" : ""}`} onClick={() => setTab("pair")}>
-              ✉ pair
-            </button>
             <button className={`tab ${tab === "setup" ? "active" : ""}`} onClick={() => setTab("setup")}>
-              ✎ setup guide
+              ✎ setup & pair
+            </button>
+            <button className={`tab ${tab === "pair" ? "active" : ""}`} onClick={() => setTab("pair")}>
+              ✉ enter code
             </button>
           </div>
           {tab === "pair" ? (
@@ -168,7 +168,13 @@ export default function App() {
               }}
             />
           ) : (
-            <Setup />
+            <Setup
+              onPaired={(owner) => {
+                setOwnerId(owner);
+                setView({ name: "machines" });
+              }}
+              onGoToPair={() => setTab("pair")}
+            />
           )}
         </div>
       </div>

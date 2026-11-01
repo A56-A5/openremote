@@ -136,30 +136,48 @@ const tui = async (api: TuiPluginApi) => {
 async function openMenu(api: TuiPluginApi, dialog: TuiDialogStack, bootstrapped = false): Promise<void> {
   handOverServer(serverUrlOf(api));
 
-  if (!bootstrapped && !isPaired()) {
-    api.ui.toast({ variant: "info", title: "openremote", message: "starting worker for the first time…" });
+  let status = await fetchStatus();
+
+  // If worker not running or not paired, start it!
+  if (!status?.running || !isPaired()) {
+    api.ui.toast({ variant: "info", title: "openremote", message: "starting bridge worker…" });
     const { ok, out } = await run(["connect"]);
-    api.ui.toast({
-      variant: ok ? "success" : "error",
-      title: "openremote connect",
-      message: out.split("\n").slice(0, 4).join(" · ") || (ok ? "worker started" : "failed"),
-      duration: 6000,
-    });
-    bootstrapped = true;
+    if (!ok) {
+      api.ui.toast({
+        variant: "error",
+        title: "openremote connect",
+        message: out.split("\n").slice(0, 4).join(" · ") || "worker failed to start",
+        duration: 8000,
+      });
+    }
+    status = await fetchStatus();
   }
 
-  dialog.replace(() => api.ui.DialogAlert({ title: "OpenRemote", message: "checking status…" }));
-  const status = await fetchStatus();
+  // When no phone is linked yet (or on initial launch), immediately provide pairing code!
+  if (!bootstrapped && (!status?.viewers || status.viewers === 0)) {
+    const { ok, out } = await run(["code"]);
+    if (ok) {
+      const webUrl = readJson<{ webUrl?: string }>(STATE_FILE)?.webUrl ?? "https://openremote-link.vercel.app";
+      dialog.replace(() =>
+        api.ui.DialogAlert({
+          title: "OpenRemote · Pairing Code",
+          message: `${out}\n\nEnter it on your phone:\n${webUrl}`,
+          onConfirm: () => void openMenu(api, dialog, true),
+        })
+      );
+      return;
+    }
+  }
 
   const options: Array<{ title: string; value: string; description?: string }> = [
-    status?.running
-      ? { title: "■  stop worker", value: "stop", description: "machine goes offline" }
-      : { title: "▶  start worker", value: "connect", description: "expose sessions to the web app" },
     {
       title: "⚿  new pairing code",
       value: "code",
       description: "single use, valid 10 minutes",
     },
+    status?.running
+      ? { title: "■  stop worker", value: "stop", description: "machine goes offline" }
+      : { title: "▶  start worker", value: "connect", description: "expose sessions to the web app" },
   ];
   if ((status?.viewers ?? 0) > 0) {
     options.push({ title: "✂  unlink all phones", value: "unlink" });
@@ -185,10 +203,11 @@ async function runAction(
 
   if (action === "code") {
     if (ok) {
+      const webUrl = readJson<{ webUrl?: string }>(STATE_FILE)?.webUrl ?? "https://openremote-link.vercel.app";
       dialog.replace(() =>
         api.ui.DialogAlert({
-          title: "Pairing code",
-          message: `${out}\n\nEnter it on ${readJson<{ webUrl?: string }>(STATE_FILE)?.webUrl ?? "the web app"}.`,
+          title: "OpenRemote · Pairing Code",
+          message: `${out}\n\nEnter it on your phone:\n${webUrl}`,
           onConfirm: () => void openMenu(api, dialog, true),
         })
       );

@@ -38,20 +38,21 @@ a scrapbook-styled web app on your phone is the remote window.
 
 ## Setup
 
-**Friends / everyday machines** (one line):
+**Friends / everyday machines** — two steps, that's it:
 
 ```bash
+# 1. install (one line — clones, builds, configures, adds to PATH)
 curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
+
+# 2. in OpenCode, run:
+/openremote
+# → automatically starts the bridge, immediately shows your 8-letter pairing code
+# → on your phone: https://openremote-link.vercel.app → enter the code
 ```
 
-The installer clones, builds, registers `openremote` + the `/openremote` slash command, and
-configures the default Supabase project. Then:
-
-```bash
-cd your-project && openremote connect   # worker starts (spawns `opencode serve` if none)
-openremote code                         # prints your pairing code
-# phone: https://openremote-link.vercel.app → pair tab → code
-```
+That's it. No separate `connect` or `code` step needed. The `/openremote` (alias `/or`) native TUI
+command handles everything: it starts the worker if it's not running, mints a pairing code
+if no phone is linked yet, and shows your status in a dialog — **zero LLM turns**.
 
 **Owners** (host your own):
 
@@ -62,11 +63,12 @@ openremote code                         # prints your pairing code
    sign-in, disable it - the web app surfaces the error but cannot solve challenges.
 3. Deploy `web/` anywhere static (Vercel: root dir `web`, env `VITE_SUPABASE_URL` +
    `VITE_SUPABASE_ANON_KEY`).
-4. Point the installer at your project (or `openremote config --url … --key … --web-url …`):
+4. Point the installer at your project:
 
 ```bash
 OPENREMOTE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
 OPENREMOTE_SUPABASE_ANON_KEY=YOUR_ANON_KEY \
+OPENREMOTE_WEB_URL=https://your-deployed-web-app.vercel.app \
 curl -fsSL …/install.sh | bash
 ```
 

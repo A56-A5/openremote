@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # OpenRemote installer - puts the openremote CLI on your machine, ready to pair.
 # Usage:  curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
-# Overrides: OPENREMOTE_SUPABASE_URL, OPENREMOTE_SUPABASE_ANON_KEY, OPENREMOTE_REPO, OPENREMOTE_SRC, OPENREMOTE_HOME
+# Overrides: OPENREMOTE_SUPABASE_URL, OPENREMOTE_SUPABASE_ANON_KEY, OPENREMOTE_WEB_URL, OPENREMOTE_REPO, OPENREMOTE_SRC, OPENREMOTE_HOME
 set -euo pipefail
 
 SUPA_URL="${OPENREMOTE_SUPABASE_URL:-https://laqoltvvcfkxaljnlfwy.supabase.co}"
 SUPA_KEY="${OPENREMOTE_SUPABASE_ANON_KEY:-sb_publishable_VAJRCuUOBk4tjdspK0auJg_yZnatpL3}"
+WEB_URL="${OPENREMOTE_WEB_URL:-https://openremote-link.vercel.app}"
 REPO_URL="${OPENREMOTE_REPO:-https://github.com/A56-A5/openremote.git}"
 HOME_DIR="${OPENREMOTE_HOME:-$HOME/.openremote}"
 INSTALL_DIR="$HOME_DIR/app"
@@ -40,7 +41,7 @@ say "installing CLI + native /openremote command"
 node "$SRC/plugin/dist/cli.js" install
 
 say "configuring (keeps any existing pairing)"
-"$HOME_DIR/bin/openremote" config --url "$SUPA_URL" --key "$SUPA_KEY" >/dev/null
+"$HOME_DIR/bin/openremote" config --url "$SUPA_URL" --key "$SUPA_KEY" --web-url "$WEB_URL" >/dev/null
 
 case ":$PATH:" in
   *":$HOME_DIR/bin:"*) say "PATH already includes ~/.openremote/bin" ;;
@@ -58,6 +59,7 @@ case ":$PATH:" in
 esac
 
 printf '\n\033[38;5;180m✓ ready\033[0m - next steps:\n'
-printf '   1. cd your-project && openremote connect   # starts the worker (spawns opencode serve if none)\n'
-printf '   2. openremote code                         # prints an 8-letter code (10 min, once)\n'
-printf '   3. phone:  https://openremote-link.vercel.app → pair tab → enter the code\n\n'
+printf '   1. Open OpenCode in your project\n'
+printf '   2. Run /openremote (or /or) — it gives you your pairing code\n'
+printf '   3. On your phone: %s → enter the code to pair!\n\n' "$WEB_URL"
+printf '   (terminal alternative: run `openremote code` anytime)\n\n'

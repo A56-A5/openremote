@@ -211,6 +211,9 @@ async function status(flags: Record<string, string>): Promise<void> {
 
 async function mintCode(): Promise<void> {
   const state = loadState();
+  if (!isRunning()) {
+    await connect({});
+  }
   const { client } = await ensureAuth(state);
   const { data, error } = await client.rpc("create_pairing", {});
   if (error) throw error;
