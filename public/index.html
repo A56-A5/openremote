@@ -261,7 +261,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 .entry.tool.done .tool-tag::before{content:"✓ "}.entry.tool.fail .tool-tag::before{content:"✗ "}
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .dock>*{pointer-events:auto;max-width:880px;margin-left:auto;margin-right:auto}
-.composer.note{padding:16px 16px 12px}
+.composer.note{padding:22px 22px 14px}
 .composer textarea{min-height:56px;max-height:140px;resize:none;font-size:1.3rem;display:block}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{font-family:var(--hand);font-size:1.1rem;cursor:pointer;background:var(--paper-2);border:1.5px solid var(--ink);border-radius:3px 10px 4px 8px;padding:1px 12px;box-shadow:2px 2px 0 rgba(61,52,40,.25);color:var(--ink)}
@@ -279,7 +279,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </style></head>
 <body class="paper-grain"><div id="root">
 <div class="shell">
-  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div></div>
+  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><button class="linklike" id="unpair" title="forget this computer" style="margin-left:12px">unpair</button></div>
 
   <div id="pairing" class="note blue pair hide"><span class="tape"></span>
     <h2 class="hand" style="margin:0 0 4px;font-size:2rem">pair with your computer</h2>
