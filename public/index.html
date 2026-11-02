@@ -83,7 +83,7 @@ body {
 
 /* ---------- sticky notes (torn paper) ---------- */
 .note {
-  position: relative; padding: 20px 18px 16px; isolation: isolate;
+  position: relative; padding: 26px 28px 20px; isolation: isolate;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.2))
           drop-shadow(0 10px 22px rgba(88, 70, 40, 0.16));
 }
@@ -127,7 +127,7 @@ body {
 /* ---------- feed (torn paper slips) ---------- */
 .feed { display: flex; flex-direction: column; gap: 14px; }
 .entry {
-  position: relative; isolation: isolate; padding: 22px 24px 18px;
+  position: relative; isolation: isolate; padding: 30px 34px 24px;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.18))
           drop-shadow(0 8px 16px rgba(88, 70, 40, 0.12));
   font-size: 0.78rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
@@ -269,7 +269,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .dock>*{pointer-events:auto;max-width:880px;margin-left:auto;margin-right:auto}
 .composer.note{padding:22px 22px 14px}
-.composer textarea{padding:6px 8px}
+.composer textarea{padding:12px 14px}
 .composer textarea{min-height:56px;max-height:140px;resize:none;font-size:1.3rem;display:block}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{font-family:var(--hand);font-size:1.1rem;cursor:pointer;background:var(--paper-2);border:1.5px solid var(--ink);border-radius:3px 10px 4px 8px;padding:1px 12px;box-shadow:2px 2px 0 rgba(61,52,40,.25);color:var(--ink)}
@@ -405,7 +405,7 @@ function render(){
   const model = mCur ? `${mCur.name}${mCur.pn?` · ${mCur.pn}`:''}` : '';
   const ctxStr = ctx && model ? `${ctx} · ${model}` : ctx || model || '';
   const ctxEl = document.querySelector('.context-line');
-  if (ctxEl) ctxEl.textContent = ctxStr || '';
+  if (ctxEl) { ctxEl.textContent = ctxStr || ''; ctxEl.classList.toggle('hide', !ctxStr); }
   // Display token usage, cost, and progress
   let stats = '';
   if(S.ses&&S.ses.summary){
@@ -439,7 +439,7 @@ function render(){
     if(statsEl) statsEl.title='Estimated (server did not send usage yet)';
   }
   const statsEl = document.querySelector('.stats-line');
-  if (statsEl) statsEl.textContent = stats || '';
+  if (statsEl) { statsEl.textContent = stats || ''; statsEl.classList.toggle('hide', !stats); }
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;
