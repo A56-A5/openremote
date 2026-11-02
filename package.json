@@ -1,16 +1,9 @@
 {
-  "name": "openremote",
+  "name": "openremote-lite",
   "version": "0.1.0",
-  "private": true,
-  "description": "Database-driven remote monitoring and interaction for local OpenCode agents",
-  "workspaces": [
-    "plugin",
-    "web"
-  ],
-  "scripts": {
-    "dev:web": "npm run dev -w web",
-    "build": "npm run build -w plugin && npm run build -w web",
-    "start-worker": "npm run start -w plugin"
-  },
+  "description": "Control a local OpenCode session from your phone browser. No database, no hosted backend, zero dependencies.",
+  "bin": { "openremote-lite": "bin/openremote.js" },
+  "scripts": { "start": "node bin/openremote.js" },
+  "engines": { "node": ">=18" },
   "license": "MIT"
 }

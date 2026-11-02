@@ -1,118 +1,61 @@
-# 📒 OpenRemote
+# openremote-lite 📒
 
-Lightweight, database-driven remote monitoring & control for local OpenCode agents.
-No hosted backend, no passwords - a Supabase project (Postgres + Auth + Realtime) is the
-rendezvous point; a tiny local worker bridges your machine with outbound-only connections;
-a scrapbook-styled web app on your phone is the remote window.
+Your OpenRemote scrapbook UI, but with **no Supabase / no database / no backend you host**. The phone talks straight to `opencode serve` on your computer.
 
 ```
-┌─────────────┐   SSE / REST    ┌──────────────┐   HTTPS (outbound only)   ┌──────────┐
-│ OpenCode    │◄───────────────►│ openremote   │◄────────────────────────►│ Supabase │
-│ (local)     │                 │ worker (CLI) │   Postgres + Auth        └────▲─────┘
-└─────────────┘                 └──────────────┘   + Realtime                     │
-                                                          ┌──────────────────────┴───┐
-                                                          │ web app (phone browser)  │
-                                                          └──────────────────────────┘
+phone -> your hosted page (static, Vercel) -> finds your PC from the 8-char code -> tunnel -> opencode serve <- opencode attach (your terminal)
+```
+Both the phone and your terminal are clients of the same OpenCode server, so messages show on both and replies stream to both.
+
+## 1. On the computer
+Needs Node 18+, `opencode`, and (for use away from home) `cloudflared` (free, no account).
+```bash
+cd your-project
+node /path/to/openremote-lite/bin/openremote.js
+```
+It prints a pairing code like `K7M2QX9P` (permanent until you pass `--new-code`). Type it exactly as printed, no hyphen.
+In another terminal, to see the same session on the computer: `opencode attach http://127.0.0.1:4096`
+
+### `/openremote` inside OpenCode (no LLM)
+
+The repo ships a native TUI command, so you never type the CLI yourself:
+
+```
+/openremote      (alias /or)
 ```
 
-## Pieces
-
-| Path                  | What                                                          |
-| --------------------- | ------------------------------------------------------------- |
-| `plugin/`             | `openremote` CLI + persistent worker (connect/stop/status/code) |
-| `plugin/src/tui.ts`   | native `/openremote` TUI command (aliases `/or` - zero LLM)   |
-| `web/`                | React + Vite front end - paper-notebook UI, single websocket  |
-| `supabase/migrations/`| `20261101000000_openremote_v2.sql` - schema, RLS, RPCs        |
-| `supabase/tests/`     | `rls_test.sql` - RLS / RPC test suite (run in SQL editor)     |
-| `test/`               | offline integration harness (mock OpenCode + fake Supabase)   |
-
-## How pairing works (no passwords anywhere)
-
-1. `openremote connect` → the worker signs in **anonymously** to Supabase and syncs your
-   local sessions (7-day window, subsessions filtered out).
-2. `openremote code` mints `XXXX-XXXX` (Crockford base32, 10 minutes, single use, bcrypt
-   hash in the DB, throttled per-IP failures).
-3. On your phone: pair tab → code → `claim_pairing` links your (also anonymous) browser
-   account to that computer. Row-level security keeps notebooks separate - every row
-   carries `owner_id`, viewers only see their owner's rows.
-
-## Setup
-
-**Friends / everyday machines** — two steps, that's it:
+It opens a menu (start / stop bridge, new pairing code, show code + link) in **zero LLM turns**.
+Registered in `~/.config/opencode/tui.json` as `tui/openremote-tui.js`. The CLI behind it:
 
 ```bash
-# 1. install (one line — clones, builds, configures, adds to PATH)
-curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
-
-# 2. in OpenCode, run:
-/openremote
-# → automatically starts the bridge, immediately shows your 8-letter pairing code
-# → on your phone: https://openremote-link.vercel.app → enter the code
+node bin/openremote.js start       # bridge + tunnel (default)
+node bin/openremote.js code        # print the pairing code
+node bin/openremote.js stop        # stop the bridge (pid in ~/.openremote-lite.pid)
+node bin/openremote.js tui         # opencode attach to the same session
 ```
 
-That's it. No separate `connect` or `code` step needed. The `/openremote` (alias `/or`) native TUI
-command handles everything: it starts the worker if it's not running, mints a pairing code
-if no phone is linked yet, and shows your status in a dialog — **zero LLM turns**.
-
-**Owners** (host your own):
-
-1. Supabase project → SQL editor → run `supabase/migrations/20261101000000_openremote_v2.sql`
-   (fresh project; one paste). Then run `supabase/tests/rls_test.sql` to verify the policies.
-2. Authentication → Providers → enable **Anonymous sign-ins** (the machine and the phone each
-   sign in anonymously). If your project enforces CAPTCHA (Turnstile/hCaptcha) on anonymous
-   sign-in, disable it - the web app surfaces the error but cannot solve challenges.
-3. Deploy `web/` anywhere static (Vercel: root dir `web`, env `VITE_SUPABASE_URL` +
-   `VITE_SUPABASE_ANON_KEY`).
-4. Point the installer at your project:
-
+## 2. Put the page on your hosted site (one time)
+The page is the single file `public/index.html`. It's static, so it deploys to the Vercel site you already have:
 ```bash
-OPENREMOTE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-OPENREMOTE_SUPABASE_ANON_KEY=YOUR_ANON_KEY \
-OPENREMOTE_WEB_URL=https://your-deployed-web-app.vercel.app \
-curl -fsSL …/install.sh | bash
+cd public
+npx vercel link     # pick your existing "openremote" project
+npx vercel --prod   # now https://openremote-link.vercel.app serves this page
 ```
+(This replaces the old Supabase version in that project. Or drag the `public` folder onto vercel.com/new for a fresh project.)
+If your site URL isn't `openremote-link.vercel.app`, run once with `--site https://your-site.vercel.app` so the terminal prints the right one.
 
-## Commands
+## 3. On the phone
+Open your Vercel URL, type the 8-character code once. It's remembered. No long URLs, no tokens.
 
-```
-openremote connect [--url U] [--key K] [--server U]   start the local worker
-openremote stop                                       stop worker + managed serve
-openremote status [--json]                            connection, sessions, viewers
-openremote code                                       mint a pairing code (10 min, single use)
-openremote unlink [viewer_id]                         revoke linked phone(s)
-openremote config [--url U] [--key K] [--server U]    set config
-openremote install                                    install CLI + /openremote TUI command
-```
+How it finds your PC: when the tunnel starts, the computer posts its (random) tunnel URL to a public topic on **ntfy.sh** (free, no account) whose name is derived from your code. The page computes the same topic, reads the URL, and connects. Every API call needs your code as a password; 8 wrong tries from one IP locks it for 10 minutes.
+Same Wi-Fi without a tunnel: open `http://<pc-ip>:8080` (printed in the terminal) and type the code.
 
-`/openremote` (alias `/or`) inside OpenCode is a native TUI plugin command - it runs the CLI
-locally and shows the result in a dialog, **zero LLM turns**. It handles start/stop, fresh
-pairing codes, unlink, and refresh; when unpaired it runs `connect` for you.
+## What the page does
+Scrapbook design from your repo; sessions, agent chip (Build/Plan), searchable model picker, variants, slash commands (`/new /sessions /models /agents /undo /redo /compact /share /unshare /rename /fork /delete /stop /unpair` + your custom OpenCode commands), `!shell`, permission and question cards, stop button, tool calls and thinking as collapsible slips.
+Not included: `@file` mentions, image attachments.
 
-## Data lifecycle
+## Flags
+`--dir <path>` `--port 8080` `--oc-port 4096` `--local` `--no-tunnel` `--new-code` `--site <url>`
 
-- Worker sweeps hourly: messages / file activity / delivered prompts / applied permissions
-  older than `retention_days` (default 7) are removed.
-- **Pending prompts are never deleted**; a permission pending >15 min is marked `expired`
-  and the session status recomputed.
-- Every tab opens with a full `resync` (statuses + recent messages), so nothing depends on
-  realtime being available - the websocket is an optimization, REST polling is the backbone.
-
-## Development
-
-```bash
-npm install
-npm run build -w plugin   # tsc → plugin/dist (worker.js, cli.js, tui.js)
-npm run build -w web      # tsc -b && vite build
-node test/worker-smoke.mjs  # full offline pipeline (mock OpenCode + fake Supabase)
-```
-
-Worker poll intervals are env-tunable for tests: `OPENREMOTE_TICK_MS`,
-`OPENREMOTE_FILE_FLUSH_MS`, `OPENREMOTE_CLAIM_IDLE_MS`, `OPENREMOTE_CLAIM_POLL_MS`,
-`OPENREMOTE_PERM_POLL_MS`, `OPENREMOTE_HEARTBEAT_MS`, `OPENREMOTE_SWEEP_MS`,
-`OPENREMOTE_AUTH_REFRESH_MS`.
-
-## Design
-
-Digital scrapbook: warm paper grain, sticky notes, masking tape, handwritten headings (Caveat)
-over monospace body (Space Mono), pastel palette, torn-note corners. Every screen, same
-aesthetic.
+## Security
+Anyone with the code can run commands on your PC through OpenCode. Don't share it; rotate with `--new-code`; stop the tool when you're not using it. The OpenCode server only listens on 127.0.0.1.
