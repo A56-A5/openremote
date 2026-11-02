@@ -127,7 +127,7 @@ body {
 /* ---------- feed (torn paper slips) ---------- */
 .feed { display: flex; flex-direction: column; gap: 14px; }
 .entry {
-  position: relative; isolation: isolate; padding: 18px 20px 16px;
+  position: relative; isolation: isolate; padding: 22px 24px 18px;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.18))
           drop-shadow(0 8px 16px rgba(88, 70, 40, 0.12));
   font-size: 0.78rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
@@ -269,6 +269,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .dock>*{pointer-events:auto;max-width:880px;margin-left:auto;margin-right:auto}
 .composer.note{padding:22px 22px 14px}
+.composer textarea{padding:6px 8px}
 .composer textarea{min-height:56px;max-height:140px;resize:none;font-size:1.3rem;display:block}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{font-family:var(--hand);font-size:1.1rem;cursor:pointer;background:var(--paper-2);border:1.5px solid var(--ink);border-radius:3px 10px 4px 8px;padding:1px 12px;box-shadow:2px 2px 0 rgba(61,52,40,.25);color:var(--ink)}
@@ -419,8 +420,23 @@ function render(){
     const pctStr = (pct!==null) ? `${pct}%` : '';
     stats = [tokStr, costStr, pctStr].filter(Boolean).join(' · ');
     if(S.st&&S.st.type!=='retry')stats += (stats? ' • ' : '') + S.st.type;
-  }else if(S.st){
-    stats = S.st.type || '';
+  }else{
+    // Fallback: approximate tokens and % from visible messages if server doesn't provide summary
+    let inTok=0,outTok=0; // rough estimate: 1 token ≈ 4 chars
+    for(const m of (S.msgs||[])){
+      const text=m.parts?.filter(p=>p.type==='text'&&p.text).map(p=>p.text).join('\n')||'';
+      const t=Math.ceil(text.length/4);
+      if(m.info?.role==='user') inTok+=t; else outTok+=t;
+    }
+    const usedTok=inTok+outTok;
+    const limitTok=128000; // generic context guess; server may override when summary appears
+    const pct = usedTok? Math.min(100, Math.round((usedTok/limitTok)*100)) : null;
+    const tokStr=(inTok||outTok)? `≈${inTok}i / ≈${outTok}o` : '';
+    const pctStr=(pct!==null)? `≈${pct}%` : '';
+    stats=[tokStr,pctStr].filter(Boolean).join(' · ');
+    if(!stats && S.st) stats=S.st.type||'';
+    const statsEl = document.querySelector('.stats-line');
+    if(statsEl) statsEl.title='Estimated (server did not send usage yet)';
   }
   const statsEl = document.querySelector('.stats-line');
   if (statsEl) statsEl.textContent = stats || '';
