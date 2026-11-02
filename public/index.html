@@ -327,7 +327,8 @@ async function api(p,method,body){
 function showPair(msg){$('#pairing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide');$('#pmsg').textContent=msg||'';pill('offline','not paired')}
 function showApp(){$('#pairing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide')}
 $('#pgo').onclick=()=>{const c=norm($('#pcode').value);if(c.length!==8)return $('#pmsg').textContent='needs 8 characters';LS.code=c;delete LS.base;base='';boot()};
-$('#unpair').onclick=()=>{LS.clear();location.reload()};
+// optional unpair button (may not be present in DOM on all builds)
+{ const unp=$('#unpair'); if(unp) unp.onclick=()=>{LS.clear();location.reload()}; }
 $('#pcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pgo').click()});
 async function probe(b){try{return(await fetch(b+'/api/global/health',{headers:H()})).status}catch{return 0}}
 async function topic(){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('orl:'+LS.code));return'orl-'+[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,24)}
@@ -386,7 +387,8 @@ function render(){
   const ctx = S.agent ? `${S.agent}` : '';
   const model = S.model ? `${S.model.name} ${S.model.pn||''}`.trim() : '';
   const ctxStr = ctx && model ? `${ctx} · ${model}` : ctx || model || '';
-  $('#pill').next('.context-line').textContent = ctxStr || '';
+  const ctxEl = document.querySelector('.context-line');
+  if (ctxEl) ctxEl.textContent = ctxStr || '';
   // Display token usage, cost, and progress
   let stats = '';
   if(S.ses&&S.ses.summary){
@@ -401,7 +403,8 @@ function render(){
   }else if(S.st){
     stats = S.st.type ? `${S.st.type} • ` : '';
   }
-  $('#pill').next('.stats-line').textContent = stats || '';
+  const statsEl = document.querySelector('.stats-line');
+  if (statsEl) statsEl.textContent = stats || '';
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;
