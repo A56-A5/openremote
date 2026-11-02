@@ -61,6 +61,7 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 18px; padding: 4px 2px;
 }
+.rightbar { display:flex; align-items:center; gap:12px; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand h1 { font-family: var(--hand); font-size: 2rem; margin: 0; letter-spacing: 0.5px; }
 .brand small { font-size: 0.62rem; color: var(--ink-soft); display: block; margin-top: -2px; }
@@ -162,6 +163,7 @@ body {
   background: var(--green); border: 2px solid var(--ink); border-radius: 4px 12px 4px 10px;
   padding: 4px 18px; box-shadow: 2px 2px 0 rgba(61, 52, 40, 0.35); color: var(--ink);
 }
+.btn.small { font-size: 0.8rem; padding: 2px 10px; }
 .btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(61,52,40,0.35); }
 .btn.secondary { background: var(--paper-2); }
 .btn.danger { background: var(--pink); }
@@ -279,7 +281,15 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </style></head>
 <body class="paper-grain"><div id="root">
 <div class="shell">
-  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><button class="linklike" id="unpair" title="forget this computer" style="margin-left:12px">unpair</button></div>
+  <div class="topbar">
+    <div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div>
+    <div class="rightbar">
+      <span class="status-pill offline" id="pill">connecting</span>
+      <div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);"></div>
+      <div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);"></div>
+      <button class="btn secondary small" id="unpair" title="forget this computer">unpair</button>
+    </div>
+  </div>
 
   <div id="pairing" class="note blue pair hide"><span class="tape"></span>
     <h2 class="hand" style="margin:0 0 4px;font-size:2rem">pair with your computer</h2>
@@ -385,7 +395,8 @@ function render(){
   $('#title').textContent=S.ses?.title||'…';$('#meta').textContent=(S.ses?.directory||'')+' · '+S.sid.slice(-6);
   if(S.perms.length||S.qs.length)pill('needs_you','needs you');else if(S.st)pill('busy','working');else pill('online','online');
   const ctx = S.agent ? `${S.agent}` : '';
-  const model = S.model ? `${S.model.name} ${S.model.pn||''}`.trim() : '';
+  const mCur = (typeof curModel === 'function') ? curModel() : null;
+  const model = mCur ? `${mCur.name}${mCur.pn?` · ${mCur.pn}`:''}` : '';
   const ctxStr = ctx && model ? `${ctx} · ${model}` : ctx || model || '';
   const ctxEl = document.querySelector('.context-line');
   if (ctxEl) ctxEl.textContent = ctxStr || '';
@@ -395,13 +406,16 @@ function render(){
     const {tokens,cost} = S.ses.summary;
     const inTok = tokens?.input||0;
     const outTok = tokens?.output||0;
-    const totalTok = inTok + outTok;
-    const costStr = cost !== undefined && cost !== null ? `$${Number(cost).toFixed(4)}` : '';
-    stats = totalTok > 0 ? `${inTok}i / ${outTok}o ` : '';
-    stats += costStr || '';
-    if(S.st&&S.st.type!=='retry')stats += ` • ${S.st.type}`;
+    const usedTok = (tokens?.used||0) || (inTok+outTok);
+    const limitTok = tokens?.limit||tokens?.max||tokens?.contextMax||0;
+    const pct = limitTok ? Math.min(100, Math.round((usedTok/limitTok)*100)) : null;
+    const costStr = (cost !== undefined && cost !== null) ? `$${Number(cost).toFixed(4)}` : '';
+    const tokStr = (inTok||outTok) ? `${inTok}i / ${outTok}o` : '';
+    const pctStr = (pct!==null) ? `${pct}%` : '';
+    stats = [tokStr, costStr, pctStr].filter(Boolean).join(' · ');
+    if(S.st&&S.st.type!=='retry')stats += (stats? ' • ' : '') + S.st.type;
   }else if(S.st){
-    stats = S.st.type ? `${S.st.type} • ` : '';
+    stats = S.st.type || '';
   }
   const statsEl = document.querySelector('.stats-line');
   if (statsEl) statsEl.textContent = stats || '';
