@@ -16,7 +16,24 @@ const CORS = {
 
 function createServer({ upstream, code }) {
   const up = new URL(upstream), want = norm(code), fails = new Map();
-  return http.createServer((req, res) => {
+  // small helper to GET JSON from upstream
+  function getJson(pathname, headers) {
+    return new Promise((resolve, reject) => {
+      const p = http.request({ host: up.hostname, port: up.port, path: pathname, method: 'GET', headers }, pr => {
+        let data = '';
+        pr.setEncoding('utf8');
+        pr.on('data', d => { data += d; });
+        pr.on('end', () => {
+          try { resolve({ status: pr.statusCode, headers: pr.headers, body: data ? JSON.parse(data) : null }); }
+          catch { resolve({ status: pr.statusCode, headers: pr.headers, body: data }); }
+        });
+      });
+      p.on('error', reject);
+      p.end();
+    });
+  }
+
+  return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
 
@@ -37,6 +54,26 @@ function createServer({ upstream, code }) {
       fails.delete(ip);
       const headers = { ...req.headers, host: up.host, 'accept-encoding': 'identity' };
       ['authorization', 'cookie', 'origin', 'referer'].forEach(k => delete headers[k]);
+      // Enrich GET /api/session/:id with summary if available upstream
+      if (req.method === 'GET') {
+        const m = url.pathname.match(/^\/api\/session\/([^\/]+)$/);
+        if (m) {
+          try {
+            const basePath = '/session/' + m[1];
+            const a = await getJson(basePath, headers);
+            if (typeof a.body === 'object' && a.status >= 200 && a.status < 300) {
+              const b = await getJson(basePath + '/summary', headers).catch(() => null);
+              if (b && b.status >= 200 && b.status < 300 && b.body) {
+                a.body.summary = b.body;
+              }
+              const h = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
+              res.writeHead(200, { ...h, ...CORS });
+              return res.end(JSON.stringify(a.body));
+            }
+          } catch {}
+          // fallthrough to generic proxy on failure
+        }
+      }
       const p = http.request({ host: up.hostname, port: up.port, path: req.url.slice(4), method: req.method, headers }, pr => {
         const h = { ...pr.headers };
         Object.keys(h).filter(k => k.startsWith('access-control-')).forEach(k => delete h[k]);
