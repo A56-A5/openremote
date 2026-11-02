@@ -6,3 +6,5 @@ dist/
 .DS_Store
 openremote.local.json
 *.tsbuildinfo
+.vercel
+.env*
