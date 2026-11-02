@@ -387,8 +387,16 @@ function chips(){const a=$('#ag');a.textContent=S.agent;a.className='chip ag'+(S
 async function refresh(){
   if(!S.sid||!S.provs)return;
   try{
-    const[ses,msgs,st,pm,qs]=await Promise.all([api('/session/'+S.sid),api(`/session/${S.sid}/message`),api('/session/status'),api('/permission').catch(()=>[]),api('/question').catch(()=>[])]);
+    const[ses,msgs,st,pm,qs,smy]=await Promise.all([
+      api('/session/'+S.sid),
+      api(`/session/${S.sid}/message`),
+      api('/session/status'),
+      api('/permission').catch(()=>[]),
+      api('/question').catch(()=>[]),
+      api(`/session/${S.sid}/summary`).catch(()=>null)
+    ]);
     S.fail=0;S.ses=ses;S.msgs=msgs;S.st=st[S.sid]||null;S.perms=pm.filter(p=>p.sessionID===S.sid);S.qs=qs.filter(q=>q.sessionID===S.sid);
+    S.summary = smy || ses.summary || null;
     const lu=[...msgs].reverse().find(m=>m.info.role==='user');
     if(lu&&!S.synced){S.synced=1;if(lu.info.agent&&S.agents.find(a=>a.name===lu.info.agent))S.agent=lu.info.agent;if(lu.info.model&&!LS.model)S.model=lu.info.model;chips()}
     render();
@@ -406,10 +414,10 @@ function render(){
   const ctxStr = ctx && model ? `${ctx} · ${model}` : ctx || model || '';
   const ctxEl = document.querySelector('.context-line');
   if (ctxEl) { ctxEl.textContent = ctxStr || ''; ctxEl.classList.toggle('hide', !ctxStr); }
-  // Display token usage, cost, and progress
+  // Display token usage, cost, and progress (live from /summary; falls back to estimate)
   let stats = '';
-  if(S.ses&&S.ses.summary){
-    const {tokens,cost} = S.ses.summary;
+  if(S.summary){
+    const {tokens={},cost} = S.summary;
     const inTok = tokens?.input||0;
     const outTok = tokens?.output||0;
     const usedTok = (tokens?.used!=null ? tokens.used : (inTok+outTok));
@@ -438,10 +446,10 @@ function render(){
     stats = comps.length ? `Context · ${comps.join(' · ')}` : '';
     if(!stats && S.st) stats=S.st.type||'';
     const statsEl = document.querySelector('.stats-line');
-    if(statsEl) statsEl.title='Estimated (server did not send usage yet)';
+    if(statsEl) statsEl.title='Estimated (waiting for server summary)';
   }
   const statsEl = document.querySelector('.stats-line');
-  if (statsEl) { statsEl.textContent = stats || ''; statsEl.classList.toggle('hide', !stats); }
+  if (statsEl) { statsEl.textContent = stats || 'Context · 0 tokens'; statsEl.classList.remove('hide'); }
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;
