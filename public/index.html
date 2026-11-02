@@ -279,7 +279,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </style></head>
 <body class="paper-grain"><div id="root">
 <div class="shell">
-  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div style="margin-left:auto;font-size:0.62rem;color:var(--ink-soft)"><button class="btn secondary" id="unpair">unpair</button></div></div>
+  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div><div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);margin-left:12px"></div></div>
 
   <div id="pairing" class="note blue pair hide"><span class="tape"></span>
     <h2 class="hand" style="margin:0 0 4px;font-size:2rem">pair with your computer</h2>
@@ -383,6 +383,25 @@ function render(){
   const s=JSON.stringify([S.ses,S.msgs,S.st,S.perms,S.qs,S.qsel]);if(s===sig)return;sig=s;
   $('#title').textContent=S.ses?.title||'…';$('#meta').textContent=(S.ses?.directory||'')+' · '+S.sid.slice(-6);
   if(S.perms.length||S.qs.length)pill('needs_you','needs you');else if(S.st)pill('busy','working');else pill('online','online');
+  const ctx = S.agent ? `${S.agent}` : '';
+  const model = S.model ? `${S.model.name} ${S.model.pn||''}`.trim() : '';
+  const ctxStr = ctx && model ? `${ctx} · ${model}` : ctx || model || '';
+  $('#pill').next('.context-line').textContent = ctxStr || '';
+  // Display token usage, cost, and progress
+  let stats = '';
+  if(S.ses&&S.ses.summary){
+    const {tokens,cost} = S.ses.summary;
+    const inTok = tokens?.input||0;
+    const outTok = tokens?.output||0;
+    const totalTok = inTok + outTok;
+    const costStr = cost !== undefined && cost !== null ? `$${Number(cost).toFixed(4)}` : '';
+    stats = totalTok > 0 ? `${inTok}i / ${outTok}o ` : '';
+    stats += costStr || '';
+    if(S.st&&S.st.type!=='retry')stats += ` • ${S.st.type}`;
+  }else if(S.st){
+    stats = S.st.type ? `${S.st.type} • ` : '';
+  }
+  $('#pill').next('.stats-line').textContent = stats || '';
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;
