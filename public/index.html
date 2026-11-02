@@ -77,7 +77,7 @@ body {
 
 /* ---------- sticky notes (torn paper) ---------- */
 .note {
-  position: relative; padding: 18px 16px 14px; isolation: isolate;
+  position: relative; padding: 20px 18px 16px; isolation: isolate;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.2))
           drop-shadow(0 10px 22px rgba(88, 70, 40, 0.16));
 }
@@ -121,7 +121,7 @@ body {
 /* ---------- feed (torn paper slips) ---------- */
 .feed { display: flex; flex-direction: column; gap: 14px; }
 .entry {
-  position: relative; isolation: isolate; padding: 12px 14px;
+  position: relative; isolation: isolate; padding: 14px 16px 12px;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.18))
           drop-shadow(0 8px 16px rgba(88, 70, 40, 0.12));
   font-size: 0.78rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
@@ -279,7 +279,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </style></head>
 <body class="paper-grain"><div id="root">
 <div class="shell">
-  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span></div>
+  <div class="topbar"><div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div><span class="status-pill offline" id="pill">connecting</span><div style="margin-left:auto;font-size:0.62rem;color:var(--ink-soft)"><button class="btn secondary" id="unpair">unpair</button></div></div>
 
   <div id="pairing" class="note blue pair hide"><span class="tape"></span>
     <h2 class="hand" style="margin:0 0 4px;font-size:2rem">pair with your computer</h2>
@@ -327,6 +327,7 @@ async function api(p,method,body){
 function showPair(msg){$('#pairing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide');$('#pmsg').textContent=msg||'';pill('offline','not paired')}
 function showApp(){$('#pairing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide')}
 $('#pgo').onclick=()=>{const c=norm($('#pcode').value);if(c.length!==8)return $('#pmsg').textContent='needs 8 characters';LS.code=c;delete LS.base;base='';boot()};
+$('#unpair').onclick=()=>{LS.clear();location.reload()};
 $('#pcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pgo').click()});
 async function probe(b){try{return(await fetch(b+'/api/global/health',{headers:H()})).status}catch{return 0}}
 async function topic(){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('orl:'+LS.code));return'orl-'+[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,24)}
