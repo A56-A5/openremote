@@ -83,7 +83,7 @@ body {
 
 /* ---------- sticky notes (torn paper) ---------- */
 .note {
-  position: relative; padding: 26px 28px 20px; isolation: isolate;
+  position: relative; padding: 26px 28px 20px 23px; isolation: isolate;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.2))
           drop-shadow(0 10px 22px rgba(88, 70, 40, 0.16));
 }
@@ -127,7 +127,7 @@ body {
 /* ---------- feed (torn paper slips) ---------- */
 .feed { display: flex; flex-direction: column; gap: 14px; }
 .entry {
-  position: relative; isolation: isolate; padding: 30px 34px 24px;
+  position: relative; isolation: isolate; padding: 30px 34px 24px 29px;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.18))
           drop-shadow(0 8px 16px rgba(88, 70, 40, 0.12));
   font-size: 0.78rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
@@ -268,8 +268,8 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 .entry.tool.done .tool-tag::before{content:"✓ "}.entry.tool.fail .tool-tag::before{content:"✗ "}
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .dock>*{pointer-events:auto;max-width:880px;margin-left:auto;margin-right:auto}
-.composer.note{padding:22px 22px 14px}
-.composer textarea{padding:12px 14px}
+.composer.note{padding:22px 22px 14px 17px}
+.composer textarea{padding:12px 9px}
 .composer textarea{min-height:56px;max-height:140px;resize:none;font-size:1.3rem;display:block}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{font-family:var(--hand);font-size:1.1rem;cursor:pointer;background:var(--paper-2);border:1.5px solid var(--ink);border-radius:3px 10px 4px 8px;padding:1px 12px;box-shadow:2px 2px 0 rgba(61,52,40,.25);color:var(--ink)}
@@ -412,13 +412,13 @@ function render(){
     const {tokens,cost} = S.ses.summary;
     const inTok = tokens?.input||0;
     const outTok = tokens?.output||0;
-    const usedTok = (tokens?.used||0) || (inTok+outTok);
+    const usedTok = (tokens?.used!=null ? tokens.used : (inTok+outTok));
     const limitTok = tokens?.limit||tokens?.max||tokens?.contextMax||0;
     const pct = limitTok ? Math.min(100, Math.round((usedTok/limitTok)*100)) : null;
-    const costStr = (cost !== undefined && cost !== null) ? `$${Number(cost).toFixed(4)}` : '';
-    const tokStr = (inTok||outTok) ? `${inTok}i / ${outTok}o` : '';
-    const pctStr = (pct!==null) ? `${pct}%` : '';
-    stats = [tokStr, costStr, pctStr].filter(Boolean).join(' · ');
+    const usedStr = usedTok ? `${usedTok.toLocaleString()} tokens` : '';
+    const pctStr = (pct!==null) ? `${pct}% used` : '';
+    const costStr = (cost !== undefined && cost !== null) ? `$${Number(cost).toFixed(2)} spent` : '';
+    stats = ['Context', usedStr, pctStr, costStr].filter(Boolean).join(' · ');
     if(S.st&&S.st.type!=='retry')stats += (stats? ' • ' : '') + S.st.type;
   }else{
     // Fallback: approximate tokens and % from visible messages if server doesn't provide summary
@@ -431,9 +431,9 @@ function render(){
     const usedTok=inTok+outTok;
     const limitTok=128000; // generic context guess; server may override when summary appears
     const pct = usedTok? Math.min(100, Math.round((usedTok/limitTok)*100)) : null;
-    const tokStr=(inTok||outTok)? `≈${inTok}i / ≈${outTok}o` : '';
-    const pctStr=(pct!==null)? `≈${pct}%` : '';
-    stats=[tokStr,pctStr].filter(Boolean).join(' · ');
+    const usedStr = usedTok ? `≈${usedTok.toLocaleString()} tokens` : '';
+    const pctStr=(pct!==null)? `≈${pct}% used` : '';
+    stats=['Context',usedStr,pctStr].filter(Boolean).join(' · ');
     if(!stats && S.st) stats=S.st.type||'';
     const statsEl = document.querySelector('.stats-line');
     if(statsEl) statsEl.title='Estimated (server did not send usage yet)';
