@@ -251,6 +251,22 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
   white-space: pre-wrap; word-break: break-word; max-height: 96px; overflow: auto;
 }
 .perm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.qtext-row { margin-top: 6px; }
+input.field.qtext {
+  width: 100%; box-sizing: border-box;
+  font-family: var(--mono); font-size: 0.7rem;
+}
+.qempty { font-family: var(--mono); font-size: 0.62rem; color: var(--ink-soft); }
+.qbtn {
+  flex-direction: column; align-items: flex-start; gap: 1px;
+  white-space: normal; text-align: left; padding: 4px 12px;
+  font-family: var(--mono); font-size: 0.72rem; line-height: 1.35;
+}
+.qbtn .qdesc { font-size: 0.6rem; font-weight: 400; opacity: 0.72; white-space: normal; }
+.qhint { display: block; font-family: var(--mono); font-size: 0.62rem; color: var(--ink-soft); margin-bottom: 5px; }
+.qreply { margin-top: 4px; }
+.qraw { margin-top: 8px; font-family: var(--mono); font-size: 0.6rem; color: var(--ink-soft); }
+.qraw summary { cursor: pointer; }
 
 .queue { border-top: 2px dashed var(--line); padding-top: 10px; }
 .queue-row {
@@ -310,6 +326,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
     <div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div>
     <div class="rightbar">
       <span class="status-pill offline hide" id="pill">connecting</span>
+      <button class="btn secondary small" id="bell" title="turn on prompt notifications">🔕</button>
       <div class="context-line hide" style="font-size:0.58rem;color:var(--ink-soft);"></div>
       <div class="stats-line hide" style="font-size:0.58rem;color:var(--ink-soft);"></div>
       <button class="btn secondary small hide" id="unpair" title="forget this computer">unpair</button>
@@ -379,13 +396,56 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </div>
 <script>
 const $=s=>document.querySelector(s),LS=localStorage,esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const S={sid:LS.sid||'',ses:null,msgs:[],st:null,agents:[],agent:'build',provs:[],model:null,variant:'',cmds:[],perms:[],qs:[],qsel:{},fail:0};
+const S={sid:LS.sid||'',ses:null,msgs:[],st:null,agents:[],agent:'build',provs:[],model:null,variant:'',cmds:[],perms:[],qs:[],qsel:{},qtxt:{},fail:0,notified:{}};
 let base=LS.base||'',sig='',toastT=0;const open=new Set();
 const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const H=()=>({Authorization:'Bearer '+LS.code});
 const T=ms=>new Date(ms).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
 const toast=(h,ms=3500)=>{const t=$('#toast');t.innerHTML=h;t.classList.remove('hide');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.add('hide'),ms)};
 const pill=(c,t)=>{const p=$('#pill'),hid=p.classList.contains('hide');p.className='status-pill '+c;if(hid)p.classList.add('hide');p.textContent=t};
+/* ---------- notifications for pending prompts (questions + permissions) ---------- */
+const notifyOn=()=>LS.notify==='1'&&'Notification' in window&&Notification.permission==='granted';
+function notify(id,title,body){
+  if(!id||S.notified[id])return;
+  S.notified[id]=1;
+  try{if(navigator.vibrate)navigator.vibrate([140,70,140])}catch{}
+  toast('🔔 '+esc(title)+(body?': '+esc(String(body).split('\n')[0]):''),7000);
+  if(notifyOn()){try{new Notification(title,{body,tag:String(id)})}catch{}}
+}
+function watchPrompts(){
+  const seen={};
+  (S.perms||[]).forEach(p=>addPrompt(seen,String(p.id||''),`${p.permission||p.title||'permission'} needed`,(p.patterns||[]).join(', ')||JSON.stringify(p.metadata||{})));
+  (S.qs||[]).forEach(q=>{
+    const qs=q.questions||[],first=qs[0]?.question||'question';
+    addPrompt(seen,String(q.id||''),`OpenCode asks (${qs.length} question${qs.length>1?'s':''})`,first+(qs.length>1?`\n+${qs.length-1} more`:'' ));
+  });
+  function addPrompt(map,id,title,body){map[id]=1;notify(id,title,body)}
+  for(const k of Object.keys(S.notified))if(!seen[k])delete S.notified[k];
+}
+let notifES=null;
+function notifStart(){
+  if(notifES||!notifyOn()||!LS.code)return;
+  topic().then(t=>{if(notifES||!notifyOn())return;
+    try{notifES=new EventSource('https://ntfy.sh/'+t+'-p/json')}catch{return}
+    notifES.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.event!=='message')return;
+      const id=(m.extra&&m.extra.id)||'ntfy-'+m.time;
+      notify(String(id),m.title||'OpenRemote',m.message||'')}catch{}};
+  }).catch(()=>{});
+}
+function notifStop(){try{if(notifES)notifES.close()}catch{}notifES=null}
+const bell=$('#bell');
+function bellSync(){if(!bell)return;bell.textContent=LS.notify==='1'?'🔔':'🔕';bell.title=LS.notify==='1'?'prompt notifications on — tap to turn off':'turn on prompt notifications'}
+if(bell)bell.onclick=async()=>{
+  if(!LS.code)return toast('pair with your computer first');
+  if(LS.notify==='1'){delete LS.notify;bellSync();notifStop();return toast('notifications off')}
+  if(!('Notification' in window))return toast('this browser has no notifications');
+  let p=Notification.permission;
+  if(p==='default')try{p=await Notification.requestPermission()}catch{p='denied'}
+  if(p!=='granted')return toast('notifications are blocked in your browser settings');
+  LS.notify='1';bellSync();notifStart();
+  try{const t=await topic();toast(`notifications on 🔔 — want them with the page closed? subscribe to <b>${esc(t)}-p</b> in the ntfy app`,14000)}catch{toast('notifications on 🔔')}
+};
+bellSync();
 async function api(p,method,body){
   const r=await fetch(base+'/api'+p,{method:method||'GET',headers:{...H(),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
   if(r.status===401){delete LS.code;showPair('that code was rejected');throw new Error('401')}
@@ -433,7 +493,7 @@ async function boot(){
   if(f==='bad')return showPair('that code was rejected: check it on your computer');
   if(f==='limit')return showPair('too many wrong tries: wait 10 minutes');
   if(!f){pill('offline','offline');$('#hint').textContent='computer not found: is the openremote bridge running?';return setTimeout(boot,4000)}
-  $('#hint').textContent='';await init();if(!looping){looping=true;loop()}
+  $('#hint').textContent='';await init();notifStart();if(!looping){looping=true;loop()}
 }
 async function loop(){await refresh();setTimeout(loop,S.st?1200:3000)}
 
@@ -494,6 +554,7 @@ async function refresh(){
       api('/question').catch(()=>[])
     ]);
     S.fail=0;S.ses=ses;S.msgs=msgs;S.st=st[S.sid]||null;S.perms=pm.filter(p=>p.sessionID===S.sid);S.qs=qs.filter(q=>q.sessionID===S.sid);
+    watchPrompts();
     const lu=[...msgs].reverse().find(m=>m.info.role==='user');
     if(lu&&!S.synced){S.synced=1;if(lu.info.agent&&S.agents.find(a=>a.name===lu.info.agent))S.agent=lu.info.agent;if(lu.info.model&&!LS.model)S.model=lu.info.model;chips()}
     render();
@@ -539,13 +600,28 @@ function render(){
     statsEl.classList.toggle('hide', !uses.length);
   }
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
+  const inlineQ=new Set();S.inlineQ=inlineQ;
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;
     if(i.role==='user'){const tx=m.parts.filter(p=>p.type==='text'&&!p.synthetic).map(p=>esc(p.text)).join('\n');if(tx.trim())f.append(E('user',tx+`<time>${T(i.time.created)}</time>`));continue}
     let first=true;const hd=()=>{if(!first)return'';first=false;return`<span class="tool-tag">▣ ${esc(i.agent||i.mode||'')} · ${esc(i.modelID||'')}</span>\n`};
     for(const p of m.parts){
-      if(p.type==='text'&&p.text)f.append(E('assistant',hd()+md(p.text)));
+      if(p.type==='text'&&p.text){f.append(E('assistant',hd()+md(p.text)));const chips=proseChips(p.text);if(chips)f.append(chips)}
       else if(p.type==='reasoning'&&p.text)f.append(E('status',`<details data-k="${p.id}"><summary>thinking…</summary><pre>${esc(p.text)}</pre></details>`));
+      else if(p.type==='question'||(p.type==='tool'&&p.tool==='question')){
+        const info=questionInput(p);
+        if(!info)f.append(E('tool',`<details data-k="${esc(p.id)}"><summary><span class="tool-tag">question</span></summary><pre>${esc(JSON.stringify((p.state||{}).input??p,null,1).slice(0,1500))}</pre></details>`));
+        else{
+          const pend=findPending(info),key=pend?pend.id:'ro:'+(p.id||'');
+          if(pend)inlineQ.add(pend.id);
+          const node=questionNode(key,info.header,info.questions,pend?pend.id:null,info.st);
+          if(!pend&&!info.st.output)node.insertAdjacentHTML('beforeend','<div class="qempty">no longer waiting for an answer</div>');
+          const raw=document.createElement('details');raw.className='qraw';raw.dataset.k='raw-'+p.id;
+          raw.innerHTML=`<summary><span class="tool-tag">${esc(p.tool||'question')}</span> raw</summary><pre>${esc(JSON.stringify(info.input,null,1).slice(0,1500))}</pre>`;
+          node.append(raw);
+          f.append(node);
+        }
+      }
       else if(p.type==='tool'){const st=p.state||{},inp=st.input?JSON.stringify(st.input,null,1).slice(0,1500):'',out=(st.output||st.error||'').toString().slice(0,3000);
         const sm=st.title||st.input?.command||st.input?.filePath||st.input?.pattern||'';
         f.append(E('tool '+({completed:'done',error:'fail'}[st.status]||''),`<details data-k="${p.id}"><summary><span class="tool-tag">${esc(p.tool)}</span> ${esc(sm)}</summary><pre>${esc(inp)}${out?'\n\n'+esc(out):''}</pre></details>`))}
@@ -562,21 +638,115 @@ function render(){
   card();if(near)scrollTo(0,document.body.scrollHeight);
 }
 function B(label,cls,fn){const b=document.createElement('button');b.className='btn '+cls;b.textContent=label;b.onclick=fn;return b}
+function QBtn(o,sel,fn){
+  const b=document.createElement('button');
+  b.className='btn secondary qbtn'+(sel?' sel':'');
+  const l=document.createElement('span');l.className='qlabel';l.textContent=(o&&o.label)||String(o);
+  b.append(l);
+  if(o&&o.description){const d=document.createElement('small');d.className='qdesc';d.textContent=o.description;b.append(d)}
+  b.onclick=fn;return b;
+}
+/* one question card — live = pending in the API (submit/skip), otherwise read-only */
+function questionNode(key,header,qs,live,st){
+  const sel=S.qsel[key]=S.qsel[key]||[];
+  const txt=S.qtxt[key]=S.qtxt[key]||[];
+  while(sel.length<qs.length)sel.push([]);
+  while(txt.length<qs.length)txt.push('');
+  const n=document.createElement('div');n.className='note blue perm-card';n.style.position='relative';n.innerHTML='<span class="tape"></span>';
+  if(header)n.insertAdjacentHTML('beforeend',`<div class="perm-detail">${esc(header)}</div>`);
+  qs.forEach((x,qi)=>{
+    n.insertAdjacentHTML('beforeend',`<div class="perm-title">❓ ${esc(x.question||'')}</div>`);
+    const opts=x.options||[],a=document.createElement('div');a.className='perm-actions';
+    opts.forEach(o=>a.append(QBtn(o,sel[qi].includes(o.label),()=>{const l=sel[qi],k=l.indexOf(o.label);if(x.multiple)(k<0?l.push(o.label):l.splice(k,1));else sel[qi]=[o.label];sig='';render()})));
+    if(!opts.length)a.insertAdjacentHTML('beforeend',`<span class="qempty">${live?'no choices — type your own answer below':'no choices'}</span>`);
+    n.append(a);
+    if(live&&x.custom!==false){
+      const row=document.createElement('div');row.className='qtext-row';
+      const inp=document.createElement('input');inp.className='field qtext';inp.type='text';inp.autocomplete='off';
+      inp.placeholder=opts.length?'type your own answer… (optional)':'your answer…';
+      inp.value=txt[qi]||'';
+      inp.oninput=()=>{txt[qi]=inp.value;S.qsel[key]=sel;S.qtxt[key]=txt};
+      row.append(inp);n.append(row);
+    }
+  });
+  if(live){
+    const a=document.createElement('div');a.className='perm-actions';a.style.marginTop='10px';
+    a.append(
+      B('submit','',async()=>{
+        const answers=qs.map((x,qi)=>{const list=[...(sel[qi]||[])],t=(txt[qi]||'').trim();if(t&&!list.includes(t))list.push(t);return list});
+        if(!answers.some(l=>l.length))return toast('pick an option or type an answer');
+        try{await api(`/question/${live}/reply`,'POST',{answers})}catch(e){return toast('⚠ '+esc(e.message))}
+        delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
+      }),
+      B('skip','danger',async()=>{
+        try{await api(`/question/${live}/reject`,'POST')}catch(e){return toast('⚠ '+esc(e.message))}
+        delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
+      })
+    );
+    n.append(a);
+  }
+  if(!live&&st&&st.output)n.insertAdjacentHTML('beforeend',`<div class="perm-detail">answered: ${esc(String(st.output).slice(0,500))}</div>`);
+  return n;
+}
+/* normalise a `question` tool part / question part into {header, questions[]} */
+function questionInput(p){
+  const st=p.state||{};
+  let raw=p.type==='question'?p:(p.type==='tool'&&p.tool==='question'?st.input:null);
+  if(!raw)return null;
+  if(typeof raw==='string'){try{raw=JSON.parse(raw)}catch{return null}}
+  const qs=Array.isArray(raw.questions)?raw.questions
+    :(raw.question?[{question:raw.question,options:raw.options||[],multiple:raw.multiple,custom:raw.custom}]:[]);
+  return qs.length?{header:raw.header,questions:qs,st,part:p,input:st.input??raw}:null;
+}
+/* tie the tool call back to the pending request from GET /question */
+function findPending(info){
+  const callID=info.st.callID||info.part.callID;
+  const mid=info.part.messageID||info.part.id;
+  const norm=a=>(a||[]).map(q=>String(q.question||'').trim()).join('\n');
+  const text=norm(info.questions);
+  return S.qs.find(x=>
+    (callID&&x.callID===callID)||(mid&&x.messageID===mid)||
+    (text&&norm(x.questions)===text)
+  )||null;
+}
+/* a question the model typed as prose: "…?  A) …  B) …" → tap an answer to fill the note */
+function proseOptions(t){
+  if(!t||!t.includes('?'))return null;
+  const lines=t.split('\n'),opts=[];let qLine=-1,firstOpt=-1;
+  lines.forEach((l,idx)=>{
+    if(qLine<0&&l.includes('?'))qLine=idx;
+    const m=l.match(/^\s*(?:[-*•]\s+|\d+[.)]\s+|[A-Za-z][.)]\s+)(\S.*)$/);
+    if(m){if(firstOpt<0)firstOpt=idx;opts.push(m[1].trim())}
+  });
+  if(qLine<0||firstOpt<0||qLine>firstOpt||opts.length<2||opts.length>8)return null;
+  return [...new Set(opts)];
+}
+function proseChips(t){
+  const opts=proseOptions(t);if(!opts)return null;
+  const e=E('status qreply','');
+  e.innerHTML='<span class="qhint">looks like a question — tap an answer to fill your note:</span>';
+  const row=document.createElement('div');row.className='perm-actions';
+  opts.forEach(o=>row.append(B(o,'secondary qbtn',()=>{
+    const ta=$('#t');
+    ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+o;
+    ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,140)+'px';
+    ta.focus();toast('added to your note — tap send when ready');
+  })));
+  e.append(row);return e;
+}
 function card(){
   const c=$('#perm');c.innerHTML='';
-  for(const p of S.perms.slice(0,1)){
+  // every pending permission, then every pending question (a permission used to hide all questions)
+  for(const p of S.perms){
     const n=document.createElement('div');n.className='note peach perm-card';n.style.position='relative';
     n.innerHTML=`<span class="tape right"></span><div class="perm-title">🔔 ${esc(p.permission||p.title||'permission')}</div><div class="perm-detail">${esc((p.patterns||[]).join('\n')||JSON.stringify(p.metadata||{}))}</div><div class="perm-actions"></div>`;
     const a=n.querySelector('.perm-actions');
     [['once','allow once',''],['always','always','secondary'],['reject','deny','danger']].forEach(([r,l,k])=>a.append(B(l,k,async()=>{await api(`/permission/${p.id}/reply`,'POST',{reply:r});refresh()})));
     c.append(n);
   }
-  if(!S.perms.length)for(const q of S.qs.slice(0,1)){
-    const sel=S.qsel[q.id]=S.qsel[q.id]||q.questions.map(()=>[]),n=document.createElement('div');n.className='note blue perm-card';n.style.position='relative';n.innerHTML='<span class="tape"></span>';
-    q.questions.forEach((x,qi)=>{n.insertAdjacentHTML('beforeend',`<div class="perm-title">❓ ${esc(x.question)}</div>`);const a=document.createElement('div');a.className='perm-actions';
-      x.options.forEach(o=>a.append(B(o.label,'secondary qbtn'+(sel[qi].includes(o.label)?' sel':''),()=>{const l=sel[qi],k=l.indexOf(o.label);if(x.multiple)(k<0?l.push(o.label):l.splice(k,1));else sel[qi]=[o.label];sig='';render()})));n.append(a)});
-    const a=document.createElement('div');a.className='perm-actions';a.style.marginTop='10px';
-    a.append(B('submit','',async()=>{await api(`/question/${q.id}/reply`,'POST',{answers:sel});refresh()}),B('skip','danger',async()=>{await api(`/question/${q.id}/reject`,'POST');refresh()}));n.append(a);c.append(n);
+  for(const q of S.qs){
+    if(S.inlineQ&&S.inlineQ.has(q.id))continue; // already answerable right there in the transcript
+    c.append(questionNode(q.id,q.header,q.questions||[],q.id,null));
   }
 }
 /* ---------- pickers + commands ---------- */

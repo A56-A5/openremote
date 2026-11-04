@@ -14,6 +14,21 @@ const WEB_PORT = +flag('port', 8080), OC_PORT = +flag('oc-port', 4096);
 const DIR = path.resolve(flag('dir', process.cwd()));
 const OC = `http://127.0.0.1:${OC_PORT}`, win = process.platform === 'win32';
 
+// cloudflared: PATH first (system install), then ~/.local/bin (what install.sh puts there)
+const which = (b) => {
+  for (const d of (process.env.PATH || '').split(path.delimiter)) {
+    if (!d) continue;
+    const p = path.join(d, b);
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {}
+  }
+  return null;
+};
+const CF_NAME = win ? 'cloudflared.exe' : 'cloudflared';
+const CLOUDFLARED = which(CF_NAME) || (() => {
+  const p = path.join(os.homedir(), '.local', 'bin', CF_NAME);
+  return fs.existsSync(p) ? p : CF_NAME;
+})();
+
 // persistent config: 8-char pairing code (typed once on the phone) + your hosted page URL
 const cfgFile = path.join(os.homedir(), '.openremote.json');
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); } catch {}
@@ -67,7 +82,7 @@ async function start() {
     console.log(`💻 Computer, same session live:  opencode attach ${OC}   (project: ${DIR})\n`);
   });
   if (flag('no-tunnel', false)) return;
-  const cf = spawn('cloudflared', ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${WEB_PORT}`], { shell: win });
+  const cf = spawn(CLOUDFLARED, ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${WEB_PORT}`], { shell: win });
   children.push(cf);
   let done = false;
   const onData = d => {
@@ -78,5 +93,5 @@ async function start() {
     console.log(`🌍 Tunnel up: your phone finds it automatically from the code. No link to type.\n`);
   };
   cf.stdout.on('data', onData); cf.stderr.on('data', onData);
-  cf.on('error', () => console.log('ℹ cloudflared not found → same-Wi-Fi only. Install it (free) for access from anywhere: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/\n'));
+  cf.on('error', () => console.log(`ℹ cloudflared not found (looked on PATH and in ~/.local/bin) → same-Wi-Fi only. Re-run install.sh, or install it (free): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/\n`));
 }

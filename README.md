@@ -18,6 +18,22 @@ curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh |
 
 It clones openremote into `~/.openremote/app` and registers the native `openremote` TUI plugin in `~/.config/opencode/tui.json` (creating it if needed). Restart OpenCode once.
 
+### Dependencies
+
+| | |
+| --- | --- |
+| **Node 18+**, **git** | required — the installer stops if they're missing |
+| **opencode** | required at runtime; the installer warns if it can't find it |
+| **cloudflared** | optional (tunnel → works off your Wi-Fi). The installer puts a static build in `~/.local/bin/cloudflared` when it's not already on your `PATH`; without it the bridge runs same-Wi-Fi only |
+
+Skip the optional step with `OPENREMOTE_SKIP_DEPS=1`. Nothing is installed system-wide and **no sudo is needed**. Overrides: `OPENREMOTE_REPO`, `OPENREMOTE_HOME`, `OPENREMOTE_INSTALL_DIR`, `OPENCODE_CONFIG_DIR`, `OPENREMOTE_BIN_DIR`.
+
+### Multiple users
+
+The install is **per-account**: everything resolves from `$HOME` (app in `~/.openremote/app`, plugin in `~/.config/opencode/tui.json`, pairing code in `~/.openremote.json`, state in `~/.openremote.pid`). Each person runs the one-liner in their own account — one pairing code per user, no shared state.
+
+The installer refuses to run as root (a `sudo curl | bash` would land in `/root` and register the plugin for root). Set `OPENREMOTE_ALLOW_ROOT=1` only if you really want that.
+
 > Can't remember the path? The page's **setup guide** tab prints the same command.
 
 ## Getting started
