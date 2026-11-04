@@ -302,10 +302,10 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
   <div class="topbar">
     <div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div>
     <div class="rightbar">
-      <span class="status-pill offline" id="pill">connecting</span>
-      <div class="context-line" style="font-size:0.58rem;color:var(--ink-soft);"></div>
-      <div class="stats-line" style="font-size:0.58rem;color:var(--ink-soft);"></div>
-      <button class="btn secondary small" id="unpair" title="forget this computer">unpair</button>
+      <span class="status-pill offline hide" id="pill">connecting</span>
+      <div class="context-line hide" style="font-size:0.58rem;color:var(--ink-soft);"></div>
+      <div class="stats-line hide" style="font-size:0.58rem;color:var(--ink-soft);"></div>
+      <button class="btn secondary small hide" id="unpair" title="forget this computer">unpair</button>
     </div>
   </div>
 
@@ -377,7 +377,7 @@ const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const H=()=>({Authorization:'Bearer '+LS.code});
 const T=ms=>new Date(ms).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
 const toast=(h,ms=3500)=>{const t=$('#toast');t.innerHTML=h;t.classList.remove('hide');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.add('hide'),ms)};
-const pill=(c,t)=>{const p=$('#pill');p.className='status-pill '+c;p.textContent=t};
+const pill=(c,t)=>{const p=$('#pill'),hid=p.classList.contains('hide');p.className='status-pill '+c;if(hid)p.classList.add('hide');p.textContent=t};
 async function api(p,method,body){
   const r=await fetch(base+'/api'+p,{method:method||'GET',headers:{...H(),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
   if(r.status===401){delete LS.code;showPair('that code was rejected');throw new Error('401')}
@@ -385,8 +385,8 @@ async function api(p,method,body){
   const t=await r.text();try{return t?JSON.parse(t):null}catch{return t}
 }
 /* ---------- landing tabs (setup + pair) ---------- */
-function showLanding(){$('#landing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide')}
-function showApp(){$('#landing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide')}
+function showLanding(){$('#landing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide');$('#pill').classList.add('hide');$('#unpair').classList.add('hide');$('.context-line').classList.add('hide');$('.stats-line').classList.add('hide')}
+function showApp(){$('#landing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide');$('#pill').classList.remove('hide');$('#unpair').classList.remove('hide')}
 function openTab(which){
   $('#tab-pair').classList.toggle('active',which==='pair');
   $('#tab-setup').classList.toggle('active',which==='setup');
