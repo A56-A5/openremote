@@ -519,8 +519,10 @@ function render(){
     const sessTok = sessionTokens();
     if (sessTok > 0) tips.push(`session total: ${fmtN(sessTok)} tokens`);
     const cost = sessionCost();
-    if (cost > 0) uses.push(`${fmtUsd(cost)} spent`);
-    if (cost > 0) tips.push(`session cost: ${fmtUsd(cost)}`);
+    if (sessTok > 0 || cost > 0 || u) {
+      uses.push(`${fmtUsd(cost)} spent`);
+      tips.push(`session cost: ${fmtUsd(cost)}`);
+    }
     statsEl.textContent = uses.join(' · ');
     statsEl.title = tips.join('\n');
     statsEl.classList.toggle('hide', !uses.length);
