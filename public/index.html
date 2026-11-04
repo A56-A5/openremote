@@ -57,6 +57,12 @@ body {
 
 /* ---------- layout ---------- */
 .shell { max-width: 880px; margin: 0 auto; padding: 20px 16px 120px; }
+.sticky-top {
+  position: sticky; top: 0; z-index: 15;
+  background: var(--paper);
+  padding-bottom: 6px; margin-bottom: 10px;
+  box-shadow: 0 1px 0 var(--line);
+}
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 18px; padding: 4px 2px;
@@ -299,6 +305,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 </style></head>
 <body class="paper-grain"><div id="root">
 <div class="shell">
+<div class="sticky-top">
   <div class="topbar">
     <div class="brand"><span style="font-size:1.8rem">📒</span><div><h1>OpenRemote</h1><small>opencode, from your pocket</small></div></div>
     <div class="rightbar">
@@ -308,6 +315,8 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
       <button class="btn secondary small hide" id="unpair" title="forget this computer">unpair</button>
     </div>
   </div>
+  <div class="row-back" id="rowbar"><button class="btn secondary" id="sbtn">☰ sessions</button><button class="btn secondary" id="nbtn">＋ new</button><span class="hint" id="hint" style="margin-left:auto"></span></div>
+</div>
 
   <div id="landing">
     <div class="tabs">
@@ -351,7 +360,6 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
   </div>
 
   <div id="app" class="stack hide">
-    <div class="row-back"><button class="btn secondary" id="sbtn">☰ sessions</button><button class="btn secondary" id="nbtn">＋ new</button><span class="hint" id="hint" style="margin-left:auto"></span></div>
     <div class="note white session-head" style="position:relative"><span class="tape left"></span>
       <h2 class="hand" id="title" style="font-size:1.6rem;margin:0 0 2px">…</h2><div class="meta" id="meta" style="font-size:.68rem;color:var(--ink-soft);word-break:break-all"></div></div>
     <div id="perm"></div>
@@ -385,8 +393,8 @@ async function api(p,method,body){
   const t=await r.text();try{return t?JSON.parse(t):null}catch{return t}
 }
 /* ---------- landing tabs (setup + pair) ---------- */
-function showLanding(){$('#landing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide');$('#pill').classList.add('hide');$('#unpair').classList.add('hide');$('.context-line').classList.add('hide');$('.stats-line').classList.add('hide')}
-function showApp(){$('#landing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide');$('#pill').classList.remove('hide');$('#unpair').classList.remove('hide')}
+function showLanding(){$('#landing').classList.remove('hide');$('#app').classList.add('hide');$('#dock').classList.add('hide');$('#rowbar').classList.add('hide');$('#pill').classList.add('hide');$('#unpair').classList.add('hide');$('.context-line').classList.add('hide');$('.stats-line').classList.add('hide')}
+function showApp(){$('#landing').classList.add('hide');$('#app').classList.remove('hide');$('#dock').classList.remove('hide');$('#rowbar').classList.remove('hide');$('#pill').classList.remove('hide');$('#unpair').classList.remove('hide')}
 function openTab(which){
   $('#tab-pair').classList.toggle('active',which==='pair');
   $('#tab-setup').classList.toggle('active',which==='setup');
@@ -615,7 +623,17 @@ async function submit(){
   sig='';setTimeout(refresh,250);
 }
 $('#go').onclick=submit;
-$('#t').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();submit()}});
+$('#t').addEventListener('keydown',e=>{
+  const sl=$('#slash'),openSl=sl&&!sl.classList.contains('hide')&&!!sl.children.length;
+  // 1) Tab: autocomplete the first slash command from the open dropdown (no submit yet)
+  if(e.key==='Tab'&&openSl){e.preventDefault();const first=sl.querySelector('.session-row');
+    if(first){const t=e.target,name=(first.querySelector('.session-row-title')?.textContent||first.textContent).replace(/^\//,'').trim();
+      t.value='/'+name+(BI[name]?'':' ');t.style.height='auto';t.style.height=Math.min(t.scrollHeight,140)+'px';
+      const end=t.value.length;t.focus();t.setSelectionRange(end,end);}
+    sl.classList.add('hide');return}
+  // 2) Enter: send. Shift+Enter inserts a newline instead.
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit()}
+});
 $('#t').addEventListener('input',e=>{
   const t=e.target;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,140)+'px';
   const v=t.value,sl=$('#slash');if(!/^\/\S*$/.test(v)){sl.classList.add('hide');return}
