@@ -23,9 +23,9 @@
   --shadow: 0 2px 6px rgba(88, 70, 40, 0.14), 0 10px 24px rgba(88, 70, 40, 0.08);
   /* torn-paper silhouettes: a rect roughened by fractal-noise displacement,
      used as a CSS mask so every paper edge tears differently */
-  --torn-a: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cfilter id='ta' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.03 0.055' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='21' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect x='13' y='13' width='374' height='274' fill='%23000' filter='url(%23ta)'/%3E%3C/svg%3E");
-  --torn-b: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cfilter id='tb' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045 0.032' numOctaves='3' seed='23' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='18' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect x='12' y='12' width='376' height='276' fill='%23000' filter='url(%23tb)'/%3E%3C/svg%3E");
-  --torn-c: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cfilter id='tc' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02 0.07' numOctaves='4' seed='91' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='23' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect x='15' y='14' width='370' height='272' fill='%23000' filter='url(%23tc)'/%3E%3C/svg%3E");
+  --torn-a: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20400%20300'%20preserveAspectRatio%3D'none'%3E%3Cfilter%20id%3D'ta'%20x%3D'-10%25'%20y%3D'-10%25'%20width%3D'120%25'%20height%3D'120%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.03%200.055'%20numOctaves%3D'3'%20seed%3D'7'%20result%3D'n'%2F%3E%3CfeDisplacementMap%20in%3D'SourceGraphic'%20in2%3D'n'%20scale%3D'12'%20xChannelSelector%3D'R'%20yChannelSelector%3D'G'%2F%3E%3C%2Ffilter%3E%3Crect%20x%3D'8'%20y%3D'8'%20width%3D'384'%20height%3D'284'%20fill%3D'%23000'%20filter%3D'url%28%23ta%29'%2F%3E%3C%2Fsvg%3E");
+  --torn-b: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20400%20300'%20preserveAspectRatio%3D'none'%3E%3Cfilter%20id%3D'tb'%20x%3D'-10%25'%20y%3D'-10%25'%20width%3D'120%25'%20height%3D'120%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.045%200.032'%20numOctaves%3D'3'%20seed%3D'23'%20result%3D'n'%2F%3E%3CfeDisplacementMap%20in%3D'SourceGraphic'%20in2%3D'n'%20scale%3D'11'%20xChannelSelector%3D'R'%20yChannelSelector%3D'G'%2F%3E%3C%2Ffilter%3E%3Crect%20x%3D'6'%20y%3D'6'%20width%3D'388'%20height%3D'288'%20fill%3D'%23000'%20filter%3D'url%28%23tb%29'%2F%3E%3C%2Fsvg%3E");
+  --torn-c: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20400%20300'%20preserveAspectRatio%3D'none'%3E%3Cfilter%20id%3D'tc'%20x%3D'-10%25'%20y%3D'-10%25'%20width%3D'120%25'%20height%3D'120%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.02%200.07'%20numOctaves%3D'3'%20seed%3D'91'%20result%3D'n'%2F%3E%3CfeDisplacementMap%20in%3D'SourceGraphic'%20in2%3D'n'%20scale%3D'12'%20xChannelSelector%3D'R'%20yChannelSelector%3D'G'%2F%3E%3C%2Ffilter%3E%3Crect%20x%3D'10'%20y%3D'9'%20width%3D'380'%20height%3D'282'%20fill%3D'%23000'%20filter%3D'url%28%23tc%29'%2F%3E%3C%2Fsvg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -83,7 +83,7 @@ body {
 
 /* ---------- sticky notes (torn paper) ---------- */
 .note {
-  position: relative; padding: 26px 28px 20px 18px; isolation: isolate;
+  position: relative; padding: 26px 30px 28px 24px; isolation: isolate;
   filter: drop-shadow(0 1px 1px rgba(88, 70, 40, 0.2))
           drop-shadow(0 10px 22px rgba(88, 70, 40, 0.16));
 }
@@ -280,7 +280,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 .entry.tool.done .tool-tag::before{content:"✓ "}.entry.tool.fail .tool-tag::before{content:"✗ "}
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .dock>*{pointer-events:auto;max-width:880px;margin-left:auto;margin-right:auto}
-.composer.note{padding:22px 22px 14px 12px}
+.composer.note{padding:24px 26px 22px 22px}
 .composer textarea{padding:12px 4px}
 .composer textarea{min-height:56px;max-height:140px;resize:none;font-size:1.3rem;display:block}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
@@ -403,6 +403,9 @@ $('#tab-setup').onclick=()=>openTab('setup');
 /* ---------- pairing + finding the computer ---------- */
 function showPair(msg){showLanding();openTab('pair');$('#pmsg').textContent=msg||'';pill('offline','not paired')}
 $('#pgo').onclick=()=>{const c=norm($('#pcode').value);if(c.length!==8)return $('#pmsg').textContent='needs 8 characters';LS.code=c;delete LS.base;base='';boot()};
+// auto-open setup tab when the URL has ?setup (used by the setup guide deep link)
+{ if (location.search.includes('setup')) { const st=document.getElementById('tab-setup');
+    if(st) window.addEventListener('load',()=>setTimeout(()=>st.click(),300)); } }
 // optional unpair button (may not be present in DOM on all builds)
 { const unp=$('#unpair'); if(unp) unp.onclick=()=>{LS.clear();location.reload()}; }
 $('#pcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pgo').click()});
