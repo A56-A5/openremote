@@ -1,69 +1,65 @@
 #!/usr/bin/env bash
-# OpenRemote Lite installation script
-# Sets up the local bridge and guides you through deployment
+# OpenRemote installer — puts the bridge + the native /openremote TUI command on your machine.
+# One line:  curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
+# Overrides: OPENREMOTE_REPO, OPENREMOTE_HOME, OPENREMOTE_INSTALL_DIR
+set -euo pipefail
 
-set -e
+REPO_URL="${OPENREMOTE_REPO:-https://github.com/A56-A5/openremote.git}"
+HOME_DIR="${OPENREMOTE_HOME:-$HOME/.openremote}"
+INSTALL_DIR="${OPENREMOTE_INSTALL_DIR:-$HOME_DIR/app}"
+OC_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
+TUI_FILE="$INSTALL_DIR/tui/openremote-tui.js"
 
-echo "=== OpenRemote Lite Installation ==="
-echo ""
+say() { printf '  \033[38;5;108m➜\033[0m %s\n' "$*"; }
+die() { printf '  \033[38;5;131m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Step 1: Verify Node.js version
-echo "1. Checking Node.js version..."
-NODE_VERSION=$(node --version | grep -o 'v[0-9]' || echo "v0")
-REQ_MAJOR=18
-CURRENT_MAJOR=$(echo $NODE_VERSION | grep -o '[0-9]' || echo "0")
-if [ "$CURRENT_MAJOR" -lt "$REQ_MAJOR" ]; then
-  echo "   ⚠ Node.js $NODE_VERSION detected. Version $REQ_MAJOR+ recommended."
-  echo "   Installing from https://nodejs.org/"
+say "checking prerequisites"
+command -v node >/dev/null 2>&1 || die "node >= 18 is required — install from https://nodejs.org"
+command -v git  >/dev/null 2>&1 || die "git is required"
+node -e 'process.exit(parseInt(process.version.slice(1)) >= 18 ? 0 : 1)' || die "node >= 18 is required (found $(node -v))"
+if ! command -v opencode >/dev/null 2>&1; then
+  say "OpenCode not found — install it first: https://opencode.ai (or follow the instructions here: https://opencode.ai/docs)"
 fi
-echo "   ✓ Node.js $NODE_VERSION found"
 
-# Step 2: Check for opencode
-echo ""
-echo "2. Checking for OpenCode..."
-if command -v opencode &>/dev/null; then
-  echo "   ✓ OpenCode is installed"
+say "fetching openremote → $INSTALL_DIR"
+if [ -d "$INSTALL_DIR/.git" ]; then
+  SRC="$INSTALL_DIR"
+  git -C "$SRC" pull --ff-only --quiet || say "could not update existing copy (continuing)"
 else
-  echo "   ⚠ OpenCode not found in PATH"
-  echo "   Install from https://opencode.ai"
+  mkdir -p "$INSTALL_DIR"
+  git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >&2 || die "clone failed — is $REPO_URL reachable?"
+  SRC="$INSTALL_DIR"
+fi
+[ -f "$TUI_FILE" ] || die "openremote repo is missing tui/openremote-tui.js — this does not look like openremote"
+
+say "registering /openremote in OpenCode ($OC_CONFIG_DIR/tui.json)"
+mkdir -p "$OC_CONFIG_DIR"
+node - "$TUI_FILE" "$OC_CONFIG_DIR/tui.json" <<'NODE'
+const fs = require('fs');
+const { pathToFileURL } = require('url');
+const [tuiFile, cfgPath] = process.argv.slice(2);
+const entry = pathToFileURL(tuiFile).href;
+let cfg = {};
+try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
+cfg['$schema'] = cfg['$schema'] || 'https://opencode.ai/tui.json';
+cfg.plugin = (cfg.plugin instanceof Array ? cfg.plugin : []).filter(p => !/openremote-tui\.js$/.test(String(p)));
+cfg.plugin.push(entry);
+fs.mkdirSync(require('path').dirname(cfgPath), { recursive: true });
+fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+NODE
+say "registered plugin: $TUI_FILE"
+
+if ! command -v opencode >/dev/null 2>&1; then
+  printf '\n\033[38;5;180m✓ files installed\033[0m — one more step:\n'
+  printf '   1. install OpenCode:  https://opencode.ai\n'
+  printf '   2. cd your-project && opencode\n'
+  printf '   3. type  /openremote  (alias /or) → it prints your pairing code\n'
+  printf '   4. phone: https://openremote-link.vercel.app → pair tab → code\n\n'
+  exit 0
 fi
 
-# Step 3: Check for bridge dependencies
-echo ""
-echo "3. Checking bridge setup..."
-if [ -f "bin/openremote.js" ]; then
-  echo "   ✓ openremote-lite bridge found at bin/openremote.js"
-else
-  echo "   ⚠ bin/openremote.js not found"
-fi
-
-# Step 4: Pairing code guidance
-echo ""
-echo "4. Pairing setup..."
-echo "   The pairing code is generated automatically when you start the bridge."
-echo "   Run: node bin/openremote.js start"
-echo "   It will print an 8-character code (e.g., K7M2QX9P)"
-echo "   Then deploy the frontend to Vercel and type the code on your phone"
-
-# Step 5: Vercel deployment
-echo ""
-echo "5. Vercel deployment..."
-echo "   This project's static frontend is already configured for Vercel."
-echo "   If not already deployed, run from the project root:"
-echo "   npx vercel link       # link to your existing Vercel project"
-echo "   npx vercel --prod     # deploy to production"
-echo "   Visit: https://openremote-link.vercel.app"
-echo "   Type the 8-character code when prompted"
-
-# Step 6: First-time usage
-echo ""
-echo "6. First-time usage..."
-echo "   After pairing, the web UI will connect to your local OpenCode server."
-echo "   Use /openremote tui for terminal-based bridge control."
-echo "   Visit the docs: https://github.com/A56-A5/openremote"
-
-echo ""
-echo "=== Installation complete ==="
-echo "Run 'node bin/openremote.js start' to start the bridge."
-echo "Then open https://openremote-link.vercel.app on your phone."
-echo "Type the 8-character code displayed in the terminal."
+printf '\n\033[38;5;180m✓ ready\033[0m — next steps:\n'
+printf '   1. cd your-project && opencode\n'
+printf '   2. type  /openremote  (alias /or) → it prints your pairing code\n'
+printf '   3. phone: https://openremote-link.vercel.app → pair tab → code\n'
+printf '\n(restart opencode if /openremote does not show up right away)\n\n'

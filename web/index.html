@@ -286,7 +286,7 @@ label.lbl { display: block; font-size: 0.65rem; text-transform: uppercase; lette
 
   <div id="pairing" class="note blue pair hide"><span class="tape"></span>
     <h2 class="hand" style="margin:0 0 4px;font-size:2rem">pair with your computer</h2>
-    <p class="hint">Run <b>openremote-lite</b> on your computer. It prints an 8-character code. Type it here once.</p>
+    <p class="hint">Start the bridge on your computer with <code>/openremote</code> inside OpenCode. It prints an 8-character code — type it here once.</p>
     <label class="lbl">pairing code</label>
     <input class="field" id="pcode" maxlength="20" autocomplete="off" autocapitalize="characters" placeholder="XXXXXXXX">
     <div class="row" style="display:flex;gap:10px;margin-top:14px;align-items:center"><button class="btn" id="pgo">connect</button><span class="hint" id="pmsg"></span></div>
@@ -346,7 +346,7 @@ async function boot(){
   const f=await findBase();
   if(f==='bad')return showPair('that code was rejected: check it on your computer');
   if(f==='limit')return showPair('too many wrong tries: wait 10 minutes');
-  if(!f){pill('offline','offline');$('#hint').textContent='computer not found: is openremote-lite running?';return setTimeout(boot,4000)}
+  if(!f){pill('offline','offline');$('#hint').textContent='computer not found: is the openremote bridge running?';return setTimeout(boot,4000)}
   $('#hint').textContent='';await init();if(!looping){looping=true;loop()}
 }
 async function loop(){await refresh();setTimeout(loop,S.st?1200:3000)}
@@ -357,6 +357,34 @@ function md(t){return t.split('```').map((p,i)=>{
   return esc(p).replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/^#{1,6} (.*)$/gm,'<b>$1</b>')}).join('')}
 const models=()=>S.provs.flatMap(p=>Object.values(p.models).map(m=>({...m,pn:p.name,providerID:p.id})));
 const curModel=()=>models().find(m=>m.providerID===S.model?.providerID&&m.id===S.model?.modelID);
+const modelFor=info=>{
+  if(!info)return null;
+  const p=(S.provs||[]).find(p=>p.id===info.providerID),m=p?.models?.[info.modelID];
+  return m?{...m,pn:p.name,providerID:p.id}:null;
+};
+function tokTotal(t){t=t||{};const c=t.cache||{},sum=(Number(t.input)||0)+(Number(t.output)||0)+(Number(t.reasoning)||0)+(Number(c.read)||0)+(Number(c.write)||0);return Number(t.total)>0?Number(t.total):sum}
+function lastUsage(){
+  for(let i=(S.msgs||[]).length-1;i>=0;i--){
+    const info=S.msgs[i]?.info;
+    if(!info||info.role!=='assistant')continue;
+    if((Number(info.tokens?.output)||0)<=0)continue;
+    const total=tokTotal(info.tokens);
+    if(total>0)return{info,tokens:info.tokens,total};
+  }
+  return null;
+}
+function sessionTokens(){
+  const total=tokTotal(S.ses?.tokens);
+  if(total>0)return total;
+  return (S.msgs||[]).reduce((n,m)=>n+(m.info?.role==='assistant'?tokTotal(m.info.tokens):0),0);
+}
+function sessionCost(){
+  const cost=Number(S.ses?.cost);
+  if(Number.isFinite(cost)&&cost>0)return cost;
+  return (S.msgs||[]).reduce((n,m)=>n+(Number(m.info?.cost)||0),0);
+}
+const fmtN=n=>Number(n||0).toLocaleString();
+const fmtUsd=n=>{const v=Number(n)||0;return v>0&&v<0.01?`$${v.toFixed(4)}`:`$${v.toFixed(2)}`};
 async function init(){
   const[pv,ag,cm,cfg]=await Promise.all([api('/provider'),api('/agent'),api('/command').catch(()=>[]),api('/config').catch(()=>({}))]);
   S.provs=pv.all.filter(p=>pv.connected.includes(p.id));S.agents=ag.filter(a=>a.mode!=='subagent'&&!a.hidden);S.cmds=cm;
@@ -385,6 +413,31 @@ function render(){
   const s=JSON.stringify([S.ses,S.msgs,S.st,S.perms,S.qs,S.qsel]);if(s===sig)return;sig=s;
   $('#title').textContent=S.ses?.title||'…';$('#meta').textContent=(S.ses?.directory||'')+' · '+S.sid.slice(-6);
   if(S.perms.length||S.qs.length)pill('needs_you','needs you');else if(S.st)pill('busy','working');else pill('online','online');
+  // Token/cost data comes straight from OpenCode: session.cost + session.tokens,
+  // and each assistant message's tokens/cost. Context = the latest completed step,
+  // exactly like the OpenCode TUI (input + output + reasoning + cache read/write).
+  const statsEl = document.querySelector('.stats-line');
+  if (statsEl) {
+    const u = lastUsage(), uses = [], tips = [];
+    if (u) {
+      const mdl = modelFor(u.info) || curModel();
+      const limit = Number(mdl?.limit?.context) || 0;
+      const pct = limit ? Math.round((u.total / limit) * 100) : null;
+      uses.push(`Context ${fmtN(u.total)}${limit ? '/' + fmtN(limit) : ''}`);
+      if (pct !== null) uses.push(`${pct}% used`);
+      const t = u.tokens || {}, c = t.cache || {};
+      tips.push(`latest step: input ${fmtN(t.input)} · output ${fmtN(t.output)} · reasoning ${fmtN(t.reasoning)} · cache read ${fmtN(c.read)} · cache write ${fmtN(c.write)}`);
+      if (limit) tips.push(`context limit: ${fmtN(limit)} (${pct}%)`);
+    }
+    const sessTok = sessionTokens();
+    if (sessTok > 0) tips.push(`session total: ${fmtN(sessTok)} tokens`);
+    const cost = sessionCost();
+    if (cost > 0) uses.push(`${fmtUsd(cost)} spent`);
+    if (cost > 0) tips.push(`session cost: ${fmtUsd(cost)}`);
+    statsEl.textContent = uses.join(' · ');
+    statsEl.title = tips.join('\n');
+    statsEl.classList.toggle('hide', !uses.length);
+  }
   const f=$('#feed'),near=innerHeight+scrollY>=document.body.scrollHeight-220,rv=S.ses?.revert?.messageID;f.innerHTML='';
   for(const m of S.msgs){
     const i=m.info;if(rv&&i.id>=rv)continue;

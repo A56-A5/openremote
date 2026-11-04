@@ -15,7 +15,7 @@ const DIR = path.resolve(flag('dir', process.cwd()));
 const OC = `http://127.0.0.1:${OC_PORT}`, win = process.platform === 'win32';
 
 // persistent config: 8-char pairing code (typed once on the phone) + your hosted page URL
-const cfgFile = path.join(os.homedir(), '.openremote-lite.json');
+const cfgFile = path.join(os.homedir(), '.openremote.json');
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); } catch {}
 const ALPHA = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 if (!cfg.code || flag('new-code', false)) cfg.code = Array.from({ length: 8 }, () => ALPHA[crypto.randomInt(ALPHA.length)]).join('');
@@ -29,7 +29,7 @@ const TOPIC = 'orl-' + crypto.createHash('sha256').update('orl:' + CODE).digest(
 const lanIps = () => Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
 const alive = () => new Promise(r => { const q = http.get(OC + '/session', s => { s.resume(); r(true); }); q.on('error', () => r(false)); q.setTimeout(1500, () => { q.destroy(); r(false); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const PIDFILE = path.join(os.homedir(), '.openremote-lite.pid');
+const PIDFILE = path.join(os.homedir(), '.openremote.pid');
 const children = [];
 const quit = () => { children.forEach(c => { try { c.kill(); } catch {} }); try { if (fs.readFileSync(PIDFILE, 'utf8') === String(process.pid)) fs.unlinkSync(PIDFILE); } catch {} process.exit(0); };
 process.on('SIGINT', quit); process.on('SIGTERM', quit);
@@ -61,7 +61,7 @@ async function start() {
     if (!(await alive())) throw new Error('opencode serve did not start.');
   }
   createServer({ upstream: OC, code: CODE }).listen(WEB_PORT, flag('local', false) ? '127.0.0.1' : '0.0.0.0', () => {
-    console.log(`\n📒 OpenRemote Lite pairing code:  ${CODE}\n`);
+    console.log(`\n📒 OpenRemote pairing code:  ${CODE}\n`);
     console.log(`📱 Phone: open ${cfg.site} and type the code (only needed once)`);
     lanIps().forEach(ip => console.log(`   same Wi-Fi: http://${ip}:${WEB_PORT}`));
     console.log(`💻 Computer, same session live:  opencode attach ${OC}   (project: ${DIR})\n`);

@@ -1,4 +1,4 @@
-// OpenCode TUI plugin for openremote-lite: native /openremote slash command.
+// OpenCode TUI plugin for openremote: native /openremote slash command.
 // Zero LLM turns: it only starts/stops the bridge and shows the pairing code.
 // Self-contained on purpose (node builtins only), so the file can be loaded
 // straight from tui.json as file:///<repo>/tui/openremote-tui.js.
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const BIN = join(REPO, "bin", "openremote.js");
-const CFG = join(homedir(), ".openremote-lite.json");
+const CFG = join(homedir(), ".openremote.json");
 const WEB_PORT = 8080;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
 const FALLBACK_SITE = "https://openremote-link.vercel.app";
@@ -134,7 +134,7 @@ async function act(api, dialog, value) {
     if (value === "newcode" && (await isUp())) await cli(["stop"]);
     const ok = await startBridge(dir, value === "newcode" ? ["--new-code"] : []);
     if (!ok) {
-      api.ui.toast({ variant: "error", title: "openremote", message: "bridge did not come up on :" + WEB_PORT + " (see ~/.openremote-lite.log)", duration: 8000 });
+      api.ui.toast({ variant: "error", title: "openremote", message: "bridge did not come up on :" + WEB_PORT + " (check your terminal for errors)", duration: 8000 });
       return void (await menu(api, dialog));
     }
     const cfg = readJson(CFG) || {};

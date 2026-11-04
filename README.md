@@ -1,57 +1,49 @@
-# openremote-lite 📒
+# 📒 OpenRemote
 
-Your OpenRemote scrapbook UI, but with **no Supabase / no database / no backend you host**. The phone talks straight to `opencode serve` on your computer.
+Drive your local **OpenCode** sessions from your phone browser — as a scrapbook notebook.
+**No Supabase / no database / no hosted backend.** The phone talks straight to `opencode serve` on your computer.
 
 ```
 phone -> your hosted page (static, Vercel) -> finds your PC from the 8-char code -> tunnel -> opencode serve <- opencode attach (your terminal)
 ```
 Both the phone and your terminal are clients of the same OpenCode server, so messages show on both and replies stream to both.
 
-## 1. On the computer
-Needs Node 18+, `opencode`, and (for use away from home) `cloudflared` (free, no account).
-```bash
-cd your-project
-node /path/to/openremote-lite/bin/openremote.js
-```
-It prints a pairing code like `K7M2QX9P` (permanent until you pass `--new-code`). Type it exactly as printed, no hyphen.
-In another terminal, to see the same session on the computer: `opencode attach http://127.0.0.1:4096`
+## Install (one line)
 
-### `/openremote` inside OpenCode (no LLM)
-
-The repo ships a native TUI command, so you never type the CLI yourself:
-
-```
-/openremote      (alias /or)
-```
-
-It opens a menu (start / stop bridge, new pairing code, show code + link) in **zero LLM turns**.
-Registered in `~/.config/opencode/tui.json` as `tui/openremote-tui.js`. The CLI behind it:
+Needs Node 18+ and `opencode`. One line, from anywhere:
 
 ```bash
-node bin/openremote.js start       # bridge + tunnel (default)
-node bin/openremote.js code        # print the pairing code
-node bin/openremote.js stop        # stop the bridge (pid in ~/.openremote-lite.pid)
-node bin/openremote.js tui         # opencode attach to the same session
+curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
 ```
 
-## 2. Put the page on your hosted site (one time)
-The page is the single file `public/index.html`. It's static, so it deploys to the Vercel site you already have:
+It clones openremote into `~/.openremote/app` and registers the native `openremote` TUI plugin in `~/.config/opencode/tui.json` (creating it if needed). Restart OpenCode once.
+
+> Can't remember the path? The page's **setup guide** tab prints the same command.
+
+## Getting started
+
 ```bash
-cd public
-npx vercel link     # pick your existing "openremote" project
-npx vercel --prod   # now https://openremote-link.vercel.app serves this page
+# 1. install (one line)
+curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh | bash
+
+# 2. inside OpenCode, anywhere you want remote control:
+/openremote        (alias /or)
 ```
-(This replaces the old Supabase version in that project. Or drag the `public` folder onto vercel.com/new for a fresh project.)
-If your site URL isn't `openremote-link.vercel.app`, run once with `--site https://your-site.vercel.app` so the terminal prints the right one.
+`/openremote` starts the bridge (proxy + tunnel), mints an 8-character pairing code (permanent until you choose a new one), and shows your status in a dialog — **zero LLM turns**.
 
-## 3. On the phone
-Open your Vercel URL, type the 8-character code once. It's remembered. No long URLs, no tokens.
+```bash
+# 3. on your phone
+#    https://openremote-link.vercel.app → open the code once (it's remembered)
+```
 
-How it finds your PC: when the tunnel starts, the computer posts its (random) tunnel URL to a public topic on **ntfy.sh** (free, no account) whose name is derived from your code. The page computes the same topic, reads the URL, and connects. Every API call needs your code as a password; 8 wrong tries from one IP locks it for 10 minutes.
-Same Wi-Fi without a tunnel: open `http://<pc-ip>:8080` (printed in the terminal) and type the code.
+### Doing it by hand (no slash command, no install)
+```bash
+node bin/openremote.js start                  # bridge + tunnel, prints your code
+opencode attach http://127.0.0.1:4096         # same live session in another terminal
+```
 
 ## What the page does
-Scrapbook design from your repo; sessions, agent chip (Build/Plan), searchable model picker, variants, slash commands (`/new /sessions /models /agents /undo /redo /compact /share /unshare /rename /fork /delete /stop /unpair` + your custom OpenCode commands), `!shell`, permission and question cards, stop button, tool calls and thinking as collapsible slips.
+Scrapbook design from your repo; sessions, agent chip (Build/Plan), searchable model picker, variants, live context/token/cost stats sourced from OpenCode (same numbers as the OpenCode TUI), slash commands (`/new /sessions /models /agents /undo /redo /compact /share /unshare /rename /fork /delete /stop /unpair` + your custom OpenCode commands), `!shell`, permission and question cards, stop button, tool calls and thinking as collapsible slips.
 Not included: `@file` mentions, image attachments.
 
 ## Flags
@@ -59,3 +51,12 @@ Not included: `@file` mentions, image attachments.
 
 ## Security
 Anyone with the code can run commands on your PC through OpenCode. Don't share it; rotate with `--new-code`; stop the tool when you're not using it. The OpenCode server only listens on 127.0.0.1.
+
+## Repo map
+| Path | What |
+| ---- | ---- |
+| `bin/openremote.js` | the bridge: reverse-proxy auth in front of `opencode serve`, ntfy rendezvous, cloudflared tunnel |
+| `server.js` | zero-dependency auth + CORS proxy (used by the bridge) |
+| `tui/openremote-tui.js` | native `/openremote` TUI plugin (zero LLM) |
+| `public/index.html` | the phone page (pairing + scrapbook session view) — deploys to Vercel |
+| `install.sh` | one-line installer that registers the TUI plugin with OpenCode |
