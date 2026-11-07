@@ -4,16 +4,15 @@
 // straight from tui.json as file:///<repo>/tui/openremote-tui.js.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const BIN = join(REPO, "bin", "openremote.js");
 const CFG = join(homedir(), ".openremote.json");
 const WEB_PORT = 8080;
-const OC_PORT = 4096;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
 const FALLBACK_SITE = "https://openremote-link.vercel.app";
 
@@ -41,78 +40,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const nodeBin = () => (process.env.OPENREMOTE_NODE || "node");
 
-// absolute path to node from *our* PATH, so a fresh terminal window does not depend on its shell rc
-const nodePath = () => {
-  const env = process.env.OPENREMOTE_NODE;
-  if (env) return env;
-  for (const d of (process.env.PATH || "").split(delimiter)) {
-    if (!d) continue;
-    const p = join(d, "node");
-    try { accessSync(p, constants.X_OK); return p } catch {}
-  }
-  return "node";
-};
-
-const hasBin = (b) => {
-  if (!b) return false;
-  if (b.includes("/")) { try { accessSync(b, constants.X_OK); return true } catch { return false } }
-  for (const d of (process.env.PATH || "").split(delimiter)) {
-    if (!d) continue;
-    try { accessSync(join(d, b), constants.X_OK); return true } catch {}
-  }
-  return false;
-};
-
-const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
-
-// Open `command` in a real terminal window so it is visible on this computer instead of
-// being a headless background process. Returns true when a window was opened.
-function openTerminal(title, command, dir) {
-  const sh = ["sh", "-c", command];
-  let candidates = [];
-  if (process.platform === "darwin") {
-    const q = (s) => String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    candidates = [["osascript", ["-e", `tell application "Terminal" to do script "${q(command)}"`, "-e", `tell application "Terminal" to activate`]]];
-  } else if (process.platform === "win32") {
-    candidates = [["cmd", ["/c", "start", "", "cmd", "/k", command]]];
-  } else {
-    if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return false;
-    const t = process.env.TERMINAL;
-    if (t) {
-      if (/(^|\/)xdg-terminal-exec$/.test(t)) candidates.push(["xdg-terminal-exec", ["--title=" + title, "--", ...sh]]);
-      else candidates.push([t, ["-e", ...sh]]);
-    }
-    candidates.push(
-      ["x-terminal-emulator", ["-e", ...sh]],
-      ["gnome-terminal", ["--title=" + title, "--", ...sh]],
-      ["konsole", ["--title", title, "-e", ...sh]],
-      ["kitty", ["--title", title, ...sh]],
-      ["ghostty", ["-e", ...sh]],
-      ["alacritty", ["-T", title, "-e", ...sh]],
-      ["wezterm", ["start", "--", ...sh]],
-      ["foot", ["--title", title, ...sh]],
-      ["xterm", ["-T", title, "-e", ...sh]],
-      ["tilix", ["-t", title, "-e", "sh -c " + shq(command)]],
-      ["xfce4-terminal", ["--title=" + title, "-e", "sh -c " + shq(command)]]
-    );
-  }
-  for (const [bin, args] of candidates) {
-    if (!hasBin(bin)) continue;
-    try {
-      const child = spawn(bin, args, { cwd: dir || REPO, detached: true, stdio: "ignore" });
-      child.on("error", () => {});
-      child.unref();
-      return true;
-    } catch {}
-  }
-  return false;
-}
-
-// what the window runs: the bridge itself, so opencode serve + the proxy logs are all visible
-const bridgeCommand = (dir, extra) =>
-  ["cd", shq(REPO), "&&", shq(nodePath()), shq(BIN), "--dir", shq(dir), ...extra.map(shq)].join(" ") +
-  '; ec=$?; if [ "$ec" -ne 0 ]; then echo; echo "[openremote] bridge exited with code $ec"; printf "press enter to close… "; read -r _; fi; exit "$ec"';
-
 const cli = (args, opts = {}) =>
   new Promise((resolve) => {
     let out = "";
@@ -124,21 +51,11 @@ const cli = (args, opts = {}) =>
   });
 
 const startBridge = async (dir, extra = []) => {
-  if (await isUp()) return true;
-  let window = false;
-  if (!process.env.OPENREMOTE_HEADLESS) window = openTerminal("OpenRemote", bridgeCommand(dir, extra), REPO);
-  // the window may need a few seconds (or may not exist at all) — fall back to a plain
-  // background launch; the pidfile in bin/openremote.js makes the loser exit instead of double-binding
-  if (!window || !(await waitForUp(10))) {
-    const child = spawn(nodeBin(), [BIN, "--dir", dir, ...extra], { cwd: REPO, detached: true, stdio: "ignore" });
-    child.on("error", () => {});
-    child.unref();
-  }
-  return waitForUp(30);
-};
-
-const waitForUp = async (seconds) => {
-  for (let i = 0; i < seconds * 2; i++) {
+  const args = [BIN, "--dir", dir, ...extra];
+  const child = spawn(nodeBin(), args, { cwd: REPO, detached: true, stdio: "ignore" });
+  child.on("error", () => {});
+  child.unref();
+  for (let i = 0; i < 40; i++) {
     if (await isUp()) return true;
     await sleep(500);
   }
@@ -180,7 +97,6 @@ async function menu(api, dialog, note) {
       options: [
         { title: "▶  start bridge", value: "start", description: "proxy + tunnel so the phone can connect", disabled: up },
         { title: "■  stop bridge", value: "stop", description: "phone goes offline", disabled: !up },
-        { title: "🖥  open opencode here", value: "attach", description: "same live session in a window on this computer", disabled: !up },
         { title: "⚿  new pairing code", value: "newcode", description: "restart with a fresh code" },
         { title: "📋  show code + link", value: "show", description: "big text to type on the phone" },
         { title: "↻  refresh", value: "refresh" },
@@ -205,17 +121,6 @@ async function act(api, dialog, value) {
       })
     );
     return;
-  }
-
-  if (value === "attach") {
-    const ok = openTerminal("opencode", `opencode attach http://127.0.0.1:${OC_PORT}`, dir);
-    api.ui.toast({
-      variant: ok ? "success" : "error",
-      title: "openremote",
-      message: ok ? "opened a window with `opencode attach`" : `no terminal found — run:  opencode attach http://127.0.0.1:${OC_PORT}`,
-      duration: 6000,
-    });
-    return void (await menu(api, dialog));
   }
 
   if (value === "stop") {

@@ -44,8 +44,6 @@ const TOPIC = 'orl-' + crypto.createHash('sha256').update('orl:' + CODE).digest(
 
 const lanIps = () => Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
 const alive = () => new Promise(r => { const q = http.get(OC + '/session', s => { s.resume(); r(true); }); q.on('error', () => r(false)); q.setTimeout(1500, () => { q.destroy(); r(false); }); });
-// is our own proxy already answering? 401 = alive (wrong/missing code), 200 = authenticated
-const bridgeUp = () => new Promise(r => { const q = http.get(`http://127.0.0.1:${WEB_PORT}/api/session`, s => { s.resume(); r(s.statusCode === 200 || s.statusCode === 401); }); q.on('error', () => r(false)); q.setTimeout(1500, () => { q.destroy(); r(false); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const PIDFILE = path.join(os.homedir(), '.openremote.pid');
 const children = [];
@@ -68,28 +66,17 @@ function stopBridge() {
 }
 
 async function start() {
-  // a second bridge would double-bind :WEB_PORT — if one is already answering, just bow out
-  if (await bridgeUp()) { console.log(`openremote bridge already running on :${WEB_PORT}`); process.exit(0); }
   try { fs.writeFileSync(PIDFILE, String(process.pid)); } catch {}
   if (await alive()) console.log(`✓ Reusing OpenCode server already running on :${OC_PORT}`);
   else {
     console.log(`… starting opencode serve in ${DIR}`);
-    // visible when we were launched from a terminal window (the /openremote menu opens one);
-    // still silent when launched detached in the background
-    const oc = spawn('opencode', ['serve', '--port', String(OC_PORT), '--hostname', '127.0.0.1'],
-      { cwd: DIR, stdio: process.stdout.isTTY ? ['ignore', 'inherit', 'inherit'] : 'ignore', shell: win });
+    const oc = spawn('opencode', ['serve', '--port', String(OC_PORT), '--hostname', '127.0.0.1'], { cwd: DIR, stdio: 'ignore', shell: win });
     children.push(oc);
     oc.on('error', () => { console.error('Could not run `opencode`. Install it first: https://opencode.ai'); quit(); });
     for (let i = 0; i < 40 && !(await alive()); i++) await sleep(500);
     if (!(await alive())) throw new Error('opencode serve did not start.');
   }
-  startPromptWatcher();
-  const srv = createServer({ upstream: OC, code: CODE, push });
-  srv.on('error', e => {
-    if (e.code === 'EADDRINUSE') { console.log(`openremote bridge already running on :${WEB_PORT}`); process.exit(0); }
-    console.error(e.message); quit();
-  });
-  srv.listen(WEB_PORT, flag('local', false) ? '127.0.0.1' : '0.0.0.0', () => {
+  createServer({ upstream: OC, code: CODE }).listen(WEB_PORT, flag('local', false) ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`\n📒 OpenRemote pairing code:  ${CODE}\n`);
     console.log(`📱 Phone: open ${cfg.site} and type the code (only needed once)`);
     lanIps().forEach(ip => console.log(`   same Wi-Fi: http://${ip}:${WEB_PORT}`));

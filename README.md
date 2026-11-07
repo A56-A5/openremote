@@ -47,8 +47,6 @@ curl -fsSL https://raw.githubusercontent.com/A56-A5/openremote/main/install.sh |
 ```
 `/openremote` starts the bridge (proxy + tunnel), mints an 8-character pairing code (permanent until you choose a new one), and shows your status in a dialog — **zero LLM turns**.
 
-The bridge opens in a **real terminal window** on your computer instead of hiding as a background process, so `opencode serve` and the proxy logs stay visible. Same menu → **open opencode here** attaches the live session in its own window. Set `OPENREMOTE_HEADLESS=1` if you want the old silent behaviour.
-
 ```bash
 # 3. on your phone
 #    https://openremote-link.vercel.app → open the code once (it's remembered)
