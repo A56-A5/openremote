@@ -233,14 +233,10 @@ async function act(api, dialog, value) {
       return void (await menu(api, dialog));
     }
     const cfg = readJson(CFG) || {};
-    // the phone drives `opencode serve`, which has no UI of its own — open the same session in a
-    // real window so you watch the messages live on this computer instead of a silent background
-    const live = !process.env.OPENREMOTE_HEADLESS && openTerminal("OpenCode", `opencode attach http://127.0.0.1:${OC_PORT}`, dir);
     dialog.replace(() =>
       api.ui.DialogAlert({
         title: value === "newcode" ? "OpenRemote · New Code" : "OpenRemote · Running",
-        message: `${cfg.code || "?"}\n\nPhone: ${cfg.site || FALLBACK_SITE}\nSame wifi: http://<this machine>:${WEB_PORT}` +
-          (live ? `\n\n🖥  a live window is opening — same session the phone drives` : `\n\n🖥  watch it live: opencode attach http://127.0.0.1:${OC_PORT}`),
+        message: `${cfg.code || "?"}\n\nPhone: ${cfg.site || FALLBACK_SITE}\nSame wifi: http://<this machine>:${WEB_PORT}`,
         onConfirm: () => void menu(api, dialog),
       })
     );
