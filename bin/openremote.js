@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { createServer } = require('../server');
+const push = require('../push');
 
 const argv = process.argv.slice(2);
 const cmd = ['start', 'tui', 'code', 'stop'].includes(argv[0]) ? argv.shift() : 'start';
@@ -94,4 +95,50 @@ async function start() {
   };
   cf.stdout.on('data', onData); cf.stderr.on('data', onData);
   cf.on('error', () => console.log(`ℹ cloudflared not found (looked on PATH and in ~/.local/bin) → same-Wi-Fi only. Re-run install.sh, or install it (free): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/\n`));
+}
+
+// poll OpenCode for pending prompts (permission requests + questions) and push to ntfy <topic>-p.
+// the client subscribes via EventSource, which browsers don't throttle in background tabs —
+// unlike the page's own setTimeout loop, which dies when the tab is unfocused.
+function startPromptWatcher() {
+  const seen = new Set();
+  async function ocGet(p) {
+    return new Promise(resolve => {
+      const q = http.get(OC + p, s => {
+        const chunks = [];
+        s.on('data', c => chunks.push(c));
+        s.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks))); } catch { resolve(null); } });
+      });
+      q.on('error', () => resolve(null));
+      q.setTimeout(2000, () => { q.destroy(); resolve(null); });
+    });
+  }
+  async function tick() {
+    const [perms, qs] = await Promise.all([ocGet('/permission'), ocGet('/question')]);
+    if (!perms && !qs) return;
+    const prompts = [];
+    for (const p of perms || []) {
+      const id = String(p.id || '');
+      if (id && !seen.has(id)) { seen.add(id); prompts.push({ id, title: (p.permission || p.title || 'Permission needed') + ' — OpenRemote', body: (p.patterns || []).join(', ') || 'OpenCode needs your permission' }); }
+    }
+    for (const q of qs || []) {
+      const id = String(q.id || '');
+      if (id && !seen.has(id)) { seen.add(id); const first = (q.questions || [])[0]?.question || 'OpenCode asks a question'; prompts.push({ id, title: `OpenCode needs you (${(q.questions || []).length} question${(q.questions || []).length > 1 ? 's' : ''})`, body: first }); }
+    }
+    // clean up resolved prompts so re-appearing ids notify again
+    const current = new Set([...(perms || []), ...(qs || [])].map(x => String(x.id || '')));
+    for (const id of seen) if (!current.has(id)) seen.delete(id);
+    for (const p of prompts) {
+      // 1) ntfy SSE — picked up by the page's EventSource while a tab is open (even unfocused)
+      fetch('https://ntfy.sh/' + TOPIC + '-p', {
+        method: 'POST',
+        headers: { Title: p.title.slice(0, 250), Priority: 'high', Tags: 'bell' },
+        body: p.body.slice(0, 500)
+      }).catch(() => {});
+      // 2) Web Push — delivered by the browser's push service even with the page closed
+      push.broadcast({ title: p.title, body: p.body, tag: p.id, url: cfg.site || '/' }).catch(() => {});
+    }
+  }
+  tick();
+  setInterval(tick, 5000);
 }

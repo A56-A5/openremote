@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#f5efe2"><title>OpenRemote</title>
+<meta name="theme-color" content="#f5efe2"><link rel="manifest" href="/manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="OpenRemote"><title>OpenRemote</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Patrick+Hand&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📒</text></svg>">
@@ -411,12 +411,18 @@ const toast=(h,ms=3500)=>{const t=$('#toast');t.innerHTML=h;t.classList.remove('
 const pill=(c,t)=>{const p=$('#pill'),hid=p.classList.contains('hide');p.className='status-pill '+c;if(hid)p.classList.add('hide');p.textContent=t};
 /* ---------- notifications for pending prompts (questions + permissions) ---------- */
 const notifyOn=()=>LS.notify==='1'&&'Notification' in window&&Notification.permission==='granted';
+let pushOk=false;
+function osNotify(title,body,tag){
+  try{if(swReg&&swReg.showNotification){swReg.showNotification(title,{body,tag,data:{url:'/'},vibrate:[140,70,140]});return}}catch{}
+  try{new Notification(title,{body,tag:String(tag)})}catch{}
+}
 function notify(id,title,body){
   if(!id||S.notified[id])return;
   S.notified[id]=1;
   try{if(navigator.vibrate)navigator.vibrate([140,70,140])}catch{}
   toast('🔔 '+esc(title)+(body?': '+esc(String(body).split('\n')[0]):''),7000);
-  if(notifyOn()){try{new Notification(title,{body,tag:String(id)})}catch{}}
+  // with Web Push active the browser shows the notification itself — don't double up
+  if(notifyOn()&&!pushOk)osNotify(title,body,String(id));
 }
 function watchPrompts(){
   const seen={};
@@ -439,17 +445,48 @@ function notifStart(){
   }).catch(()=>{});
 }
 function notifStop(){try{if(notifES)notifES.close()}catch{}notifES=null}
+/* ---------- Web Push: notifications even with the page closed ---------- */
+let swReg=null;
+const b64uToU8=s=>{const pad='='.repeat((4-s.length%4)%4);const b=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/'));const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u};
+async function pushRegister(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))return null;
+  try{swReg=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;return swReg}catch{return null}
+}
+async function pushSubscribe(){
+  pushOk=false;
+  if(!LS.code)return false;
+  const reg=await pushRegister();if(!reg)return false;
+  let sub=null;try{sub=await reg.pushManager.getSubscription()}catch{}
+  if(!sub){
+    let key=null;
+    try{key=(await (await fetch(base+'/api/push/publicKey',{headers:H()})).json()).key}catch{return false}
+    if(!key)return false;
+    try{sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToU8(key)})}catch{return false}
+  }
+  try{await fetch(base+'/api/push/subscribe',{method:'POST',headers:{...H(),'Content-Type':'application/json'},body:JSON.stringify(sub)})}catch{return false}
+  pushOk=true;return true;
+}
+async function pushUnsubscribe(){
+  if(!swReg)return;
+  try{const sub=await swReg.pushManager.getSubscription();if(!sub)return;
+    try{await fetch(base+'/api/push/unsubscribe',{method:'POST',headers:{...H(),'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})})}catch{}
+    await sub.unsubscribe();
+  }catch{}
+}
 const bell=$('#bell');
 function bellSync(){if(!bell)return;bell.textContent=LS.notify==='1'?'🔔':'🔕';bell.title=LS.notify==='1'?'prompt notifications on — tap to turn off':'turn on prompt notifications'}
 if(bell)bell.onclick=async()=>{
   if(!LS.code)return toast('pair with your computer first');
-  if(LS.notify==='1'){delete LS.notify;bellSync();notifStop();return toast('notifications off')}
+  if(LS.notify==='1'){delete LS.notify;bellSync();pushOk=false;notifStop();pushUnsubscribe();return toast('notifications off')}
   if(!('Notification' in window))return toast('this browser has no notifications');
   let p=Notification.permission;
   if(p==='default')try{p=await Notification.requestPermission()}catch{p='denied'}
   if(p!=='granted')return toast('notifications are blocked in your browser settings');
-  LS.notify='1';bellSync();notifStart();
-  try{const t=await topic();toast(`notifications on 🔔 — want them with the page closed? subscribe to <b>${esc(t)}-p</b> in the ntfy app`,14000)}catch{toast('notifications on 🔔')}
+  LS.notify='1';bellSync();
+  const wp=await pushSubscribe();pushOk=wp;
+  if(!wp)notifStart();
+  if(wp){try{const t=await topic();toast(`notifications on 🔔 — you'll be pinged even when this tab is closed. (optional: subscribe to <b>${esc(t)}-p</b> in the ntfy app)`,14000)}catch{toast('notifications on 🔔 — works with the page closed')}}
+  else try{const t=await topic();toast(`notifications on 🔔 — for alerts while fully closed, subscribe to <b>${esc(t)}-p</b> in the ntfy app`,14000)}catch{toast('notifications on 🔔')}
 };
 bellSync();
 async function api(p,method,body){
@@ -499,7 +536,7 @@ async function boot(){
   if(f==='bad')return showPair('that code was rejected: check it on your computer');
   if(f==='limit')return showPair('too many wrong tries: wait 10 minutes');
   if(!f){pill('offline','offline');$('#hint').textContent='computer not found: is the openremote bridge running?';return setTimeout(boot,4000)}
-  $('#hint').textContent='';await init();notifStart();if(!looping){looping=true;loop()}
+  $('#hint').textContent='';await init();if(LS.notify==='1')pushSubscribe().then(ok=>{pushOk=ok;if(!ok)notifStart()}).catch(()=>{pushOk=false;notifStart()});if(!looping){looping=true;loop()}
 }
 async function loop(){await refresh();setTimeout(loop,S.st?1200:3000)}
 

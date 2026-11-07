@@ -2,6 +2,8 @@
   "version": 2,
   "builds": [],
   "routes": [
+    {"src": "/sw.js", "dest": "/public/sw.js"},
+    {"src": "/manifest.webmanifest", "dest": "/public/manifest.webmanifest"},
     {"src": "/(.*)", "dest": "public/index.html"}
   ]
 }

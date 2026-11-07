@@ -62,6 +62,22 @@ opencode attach http://127.0.0.1:4096         # same live session in another ter
 Scrapbook design from your repo; sessions, agent chip (Build/Plan), searchable model picker, variants, live context/token/cost stats sourced from OpenCode (same numbers as the OpenCode TUI), slash commands (`/new /sessions /models /agents /undo /redo /compact /share /unshare /rename /fork /delete /stop /unpair` + your custom OpenCode commands), `!shell`, permission and question cards, stop button, tool calls and thinking as collapsible slips.
 Not included: `@file` mentions, image attachments.
 
+## Notifications (phone, even when the page is closed)
+
+Tap the 🔔 in the page once and allow notifications. The page registers a service worker, asks the
+bridge for its VAPID key, and stores the browser's push subscription on your computer
+(`~/.openremote-push-subs.json`). The bridge then sends a real **Web Push** (VAPID + `aes128gcm`,
+RFC 8291) for every new question/permission — so your phone buzzes even with the browser closed.
+
+- Keys are generated locally once (`~/.openremote-vapid.json`); nothing leaves your machine except
+  the encrypted payload handed to your browser vendor's push service.
+- While the page is open you still get an in-page toast; the OS notification is not duplicated.
+- A fallback via [ntfy.sh](https://ntfy.sh) is used only if the browser refuses Web Push.
+- iOS: add the page to your Home Screen first (Web Push requires an installed PWA); the included
+  `manifest.webmanifest` makes it installable.
+- Test it from a terminal: `curl -X POST -H 'Authorization: Bearer <code>' http://127.0.0.1:8080/api/push/test`,
+  or watch the bridge log for `🔔 pushed ...`.
+
 ## Flags
 `--dir <path>` `--port 8080` `--oc-port 4096` `--local` `--no-tunnel` `--new-code` `--site <url>`
 
@@ -75,4 +91,7 @@ Anyone with the code can run commands on your PC through OpenCode. Don't share i
 | `server.js` | zero-dependency auth + CORS proxy (used by the bridge) |
 | `tui/openremote-tui.js` | native `/openremote` TUI plugin (zero LLM) |
 | `public/index.html` | the phone page (pairing + scrapbook session view) — deploys to Vercel |
+| `public/sw.js` | service worker: shows the Web Push notification when the page is closed |
+| `public/manifest.webmanifest` | PWA manifest (installable on iOS/Android, required for iOS push) |
+| `push.js` | zero-dependency Web Push: VAPID JWT, `aes128gcm` encryption, subscription store |
 | `install.sh` | one-line installer that registers the TUI plugin with OpenCode |
