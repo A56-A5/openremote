@@ -263,6 +263,12 @@ input.field.qtext {
   font-family: var(--mono); font-size: 0.72rem; line-height: 1.35;
 }
 .qbtn .qdesc { font-size: 0.6rem; font-weight: 400; opacity: 0.72; white-space: normal; }
+.qbtn:disabled { opacity: 0.55; cursor: default; box-shadow: none; }
+.qbtn:disabled:active { transform: none; }
+.qhead {
+  font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-soft); margin-top: 10px;
+}
 .qhint { display: block; font-family: var(--mono); font-size: 0.62rem; color: var(--ink-soft); margin-bottom: 5px; }
 .qreply { margin-top: 4px; }
 .qraw { margin-top: 8px; font-family: var(--mono); font-size: 0.6rem; color: var(--ink-soft); }
@@ -553,7 +559,9 @@ async function refresh(){
       api('/permission').catch(()=>[]),
       api('/question').catch(()=>[])
     ]);
-    S.fail=0;S.ses=ses;S.msgs=msgs;S.st=st[S.sid]||null;S.perms=pm.filter(p=>p.sessionID===S.sid);S.qs=qs.filter(q=>q.sessionID===S.sid);
+    S.fail=0;S.ses=ses;S.msgs=msgs;S.st=st[S.sid]||null;
+    S.perms=pm.filter(p=>p.sessionID===S.sid);S.qs=qs.filter(q=>q.sessionID===S.sid);
+    S.operms=pm.filter(p=>p.sessionID!==S.sid);S.oqs=qs.filter(q=>q.sessionID!==S.sid);
     watchPrompts();
     const lu=[...msgs].reverse().find(m=>m.info.role==='user');
     if(lu&&!S.synced){S.synced=1;if(lu.info.agent&&S.agents.find(a=>a.name===lu.info.agent))S.agent=lu.info.agent;if(lu.info.model&&!LS.model)S.model=lu.info.model;chips()}
@@ -563,9 +571,11 @@ async function refresh(){
 /* ---------- render (scrapbook entries) ---------- */
 const E=(cls,html)=>{const d=document.createElement('article');d.className='entry '+cls;d.innerHTML=html;return d};
 function render(){
-  const s=JSON.stringify([S.ses,S.msgs,S.st,S.perms,S.qs,S.qsel]);if(s===sig)return;sig=s;
+  const s=JSON.stringify([S.ses,S.msgs,S.st,S.perms,S.qs,S.oqs,S.operms,S.qsel]);if(s===sig)return;sig=s;
+  // keep the caret in an answer box across the full rebuild below (the session polls every 1.2s)
+  const _ae=document.activeElement,_keep=(_ae&&_ae.classList&&_ae.classList.contains('qtext')&&_ae.dataset.qk)?{k:_ae.dataset.qk,p:_ae.selectionStart}:null;
   $('#title').textContent=S.ses?.title||'…';$('#meta').textContent=(S.ses?.directory||'')+' · '+S.sid.slice(-6);
-  if(S.perms.length||S.qs.length)pill('needs_you','needs you');else if(S.st)pill('busy','working');else pill('online','online');
+  if(S.perms.length||S.qs.length||S.oqs?.length||S.operms?.length)pill('needs_you','needs you');else if(S.st)pill('busy','working');else pill('online','online');
   const ctx = S.agent ? `${S.agent}` : '';
   const mCur = (typeof curModel === 'function') ? curModel() : null;
   const model = mCur ? `${mCur.name}${mCur.pn?` · ${mCur.pn}`:''}` : '';
@@ -614,8 +624,10 @@ function render(){
         else{
           const pend=findPending(info),key=pend?pend.id:'ro:'+(p.id||'');
           if(pend)inlineQ.add(pend.id);
-          const node=questionNode(key,info.header,info.questions,pend?pend.id:null,info.st);
-          if(!pend&&!info.st.output)node.insertAdjacentHTML('beforeend','<div class="qempty">no longer waiting for an answer</div>');
+          // transcript copy is a record only — the answerable card always lives in #perm at the top
+          const node=questionNode(key,info.header,info.questions,null,info.st);
+          if(pend)node.insertAdjacentHTML('beforeend','<div class="qempty">☝ answer this in the card at the top of the page</div>');
+          else if(!info.st.output&&!(info.st.metadata&&info.st.metadata.answers))node.insertAdjacentHTML('beforeend','<div class="qempty">no longer waiting for an answer</div>');
           const raw=document.createElement('details');raw.className='qraw';raw.dataset.k='raw-'+p.id;
           raw.innerHTML=`<summary><span class="tool-tag">${esc(p.tool||'question')}</span> raw</summary><pre>${esc(JSON.stringify(info.input,null,1).slice(0,1500))}</pre>`;
           node.append(raw);
@@ -635,7 +647,9 @@ function render(){
   if(!f.children.length)f.innerHTML='<div class="empty">nothing here yet: write a note below ✎</div>';
   f.querySelectorAll('details').forEach(x=>{x.open=open.has(x.dataset.k);x.ontoggle=()=>x.open?open.add(x.dataset.k):open.delete(x.dataset.k)});
   const g=$('#go');g.textContent=S.st?'stop':'send';g.classList.toggle('danger',!!S.st);
-  card();if(near)scrollTo(0,document.body.scrollHeight);
+  const jumped=card();
+  if(_keep){const n=document.querySelector('[data-qk="'+_keep.k+'"]');if(n){try{n.focus({preventScroll:true})}catch{try{n.focus()}catch{}}try{n.setSelectionRange(_keep.p,_keep.p)}catch{}}}
+  if(near&&!jumped)scrollTo(0,document.body.scrollHeight);
 }
 function B(label,cls,fn){const b=document.createElement('button');b.className='btn '+cls;b.textContent=label;b.onclick=fn;return b}
 function QBtn(o,sel,fn){
@@ -652,17 +666,29 @@ function questionNode(key,header,qs,live,st){
   const txt=S.qtxt[key]=S.qtxt[key]||[];
   while(sel.length<qs.length)sel.push([]);
   while(txt.length<qs.length)txt.push('');
+  const lab=o=>(o&&o.label)||String(o);
+  const answered=(st&&st.metadata&&Array.isArray(st.metadata.answers))?st.metadata.answers:null;
   const n=document.createElement('div');n.className='note blue perm-card';n.style.position='relative';n.innerHTML='<span class="tape"></span>';
   if(header)n.insertAdjacentHTML('beforeend',`<div class="perm-detail">${esc(header)}</div>`);
   qs.forEach((x,qi)=>{
+    if(x.header)n.insertAdjacentHTML('beforeend',`<div class="qhead">${esc(x.header)}</div>`);
     n.insertAdjacentHTML('beforeend',`<div class="perm-title">❓ ${esc(x.question||'')}</div>`);
     const opts=x.options||[],a=document.createElement('div');a.className='perm-actions';
-    opts.forEach(o=>a.append(QBtn(o,sel[qi].includes(o.label),()=>{const l=sel[qi],k=l.indexOf(o.label);if(x.multiple)(k<0?l.push(o.label):l.splice(k,1));else sel[qi]=[o.label];sig='';render()})));
+    const picked=live?sel[qi]:((answered&&Array.isArray(answered[qi]))?answered[qi]:[]);
+    opts.forEach(o=>{
+      const label=lab(o);
+      const b=QBtn(o,live?sel[qi].includes(label):picked.includes(label),()=>{
+        const l=sel[qi],k=l.indexOf(label);if(x.multiple)(k<0?l.push(label):l.splice(k,1));else sel[qi]=[label];sig='';render();
+      });
+      if(!live){b.disabled=true;b.title='already answered';}
+      a.append(b);
+    });
     if(!opts.length)a.insertAdjacentHTML('beforeend',`<span class="qempty">${live?'no choices — type your own answer below':'no choices'}</span>`);
     n.append(a);
     if(live&&x.custom!==false){
       const row=document.createElement('div');row.className='qtext-row';
       const inp=document.createElement('input');inp.className='field qtext';inp.type='text';inp.autocomplete='off';
+      inp.dataset.qk=key+':'+qi;
       inp.placeholder=opts.length?'type your own answer… (optional)':'your answer…';
       inp.value=txt[qi]||'';
       inp.oninput=()=>{txt[qi]=inp.value;S.qsel[key]=sel;S.qtxt[key]=txt};
@@ -671,19 +697,20 @@ function questionNode(key,header,qs,live,st){
   });
   if(live){
     const a=document.createElement('div');a.className='perm-actions';a.style.marginTop='10px';
-    a.append(
-      B('submit','',async()=>{
-        const answers=qs.map((x,qi)=>{const list=[...(sel[qi]||[])],t=(txt[qi]||'').trim();if(t&&!list.includes(t))list.push(t);return list});
-        if(!answers.some(l=>l.length))return toast('pick an option or type an answer');
-        try{await api(`/question/${live}/reply`,'POST',{answers})}catch(e){return toast('⚠ '+esc(e.message))}
-        delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
-      }),
-      B('skip','danger',async()=>{
-        try{await api(`/question/${live}/reject`,'POST')}catch(e){return toast('⚠ '+esc(e.message))}
-        delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
-      })
-    );
-    n.append(a);
+    const sub=B('submit','',async function(){
+      if(this.disabled)return;
+      const answers=qs.map((x,qi)=>{const list=[...(sel[qi]||[])],t=(txt[qi]||'').trim();if(t&&!list.includes(t))list.push(t);return list});
+      if(!answers.some(l=>l.length))return toast('pick an option or type an answer');
+      this.disabled=true;
+      try{await api(`/question/${live}/reply`,'POST',{answers})}catch(e){this.disabled=false;return toast('⚠ '+esc(e.message))}
+      delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
+    });
+    const skip=B('skip','danger',async function(){
+      if(this.disabled)return;this.disabled=true;
+      try{await api(`/question/${live}/reject`,'POST')}catch(e){this.disabled=false;return toast('⚠ '+esc(e.message))}
+      delete S.qsel[key];delete S.qtxt[key];sig='';refresh();
+    });
+    a.append(sub,skip);n.append(a);
   }
   if(!live&&st&&st.output)n.insertAdjacentHTML('beforeend',`<div class="perm-detail">answered: ${esc(String(st.output).slice(0,500))}</div>`);
   return n;
@@ -698,16 +725,16 @@ function questionInput(p){
     :(raw.question?[{question:raw.question,options:raw.options||[],multiple:raw.multiple,custom:raw.custom}]:[]);
   return qs.length?{header:raw.header,questions:qs,st,part:p,input:st.input??raw}:null;
 }
-/* tie the tool call back to the pending request from GET /question */
+/* tie the tool call back to the pending request from GET /question.
+   The pending request nests callID/messageID under `tool`, so match there first. */
 function findPending(info){
   const callID=info.st.callID||info.part.callID;
   const mid=info.part.messageID||info.part.id;
   const norm=a=>(a||[]).map(q=>String(q.question||'').trim()).join('\n');
   const text=norm(info.questions);
-  return S.qs.find(x=>
-    (callID&&x.callID===callID)||(mid&&x.messageID===mid)||
-    (text&&norm(x.questions)===text)
-  )||null;
+  const byId=x=>(callID&&x.tool&&x.tool.callID===callID)||(mid&&x.tool&&x.tool.messageID===mid)
+    ||(callID&&x.callID===callID)||(mid&&x.messageID===mid);
+  return S.qs.find(byId)||(text?S.qs.find(x=>norm(x.questions)===text):null)||null;
 }
 /* a question the model typed as prose: "…?  A) …  B) …" → tap an answer to fill the note */
 function proseOptions(t){
@@ -736,18 +763,38 @@ function proseChips(t){
 }
 function card(){
   const c=$('#perm');c.innerHTML='';
-  // every pending permission, then every pending question (a permission used to hide all questions)
+  // every pending permission, then every pending question — always at the top so it is answerable
   for(const p of S.perms){
     const n=document.createElement('div');n.className='note peach perm-card';n.style.position='relative';
     n.innerHTML=`<span class="tape right"></span><div class="perm-title">🔔 ${esc(p.permission||p.title||'permission')}</div><div class="perm-detail">${esc((p.patterns||[]).join('\n')||JSON.stringify(p.metadata||{}))}</div><div class="perm-actions"></div>`;
     const a=n.querySelector('.perm-actions');
-    [['once','allow once',''],['always','always','secondary'],['reject','deny','danger']].forEach(([r,l,k])=>a.append(B(l,k,async()=>{await api(`/permission/${p.id}/reply`,'POST',{reply:r});refresh()})));
+    [['once','allow once',''],['always','always','secondary'],['reject','deny','danger']].forEach(([r,l,k])=>a.append(B(l,k,async function(){
+      if(this.disabled)return;this.disabled=true;
+      try{await api(`/permission/${p.id}/reply`,'POST',{reply:r})}catch(e){this.disabled=false;return toast('⚠ '+esc(e.message))}
+      sig='';refresh();
+    })));
     c.append(n);
   }
-  for(const q of S.qs){
-    if(S.inlineQ&&S.inlineQ.has(q.id))continue; // already answerable right there in the transcript
-    c.append(questionNode(q.id,q.header,q.questions||[],q.id,null));
+  for(const q of S.qs)c.append(questionNode(q.id,q.header,q.questions||[],q.id,null));
+  // prompts waiting in a *different* session: offer a jump instead of hiding them
+  const others=[...(S.operms||[]).map(p=>({sid:p.sessionID,q:'permission needed: '+(p.permission||p.title||'')})),
+                ...(S.oqs||[]).map(q=>({sid:q.sessionID,q:((q.questions||[])[0]||{}).question||'question'}))];
+  if(!S.perms.length&&!S.qs.length&&others.length){
+    const n=document.createElement('div');n.className='note peach perm-card';n.style.position='relative';
+    n.innerHTML=`<span class="tape right"></span><div class="perm-title">🔔 OpenCode is waiting in another session</div><div class="perm-detail">${esc(others.map(o=>o.q).join('\n'))}</div><div class="perm-actions"></div>`;
+    const a=n.querySelector('.perm-actions');
+    [...new Set(others.map(o=>o.sid))].forEach(sid=>a.append(B('open that session','secondary',()=>go(sid))));
+    c.append(n);
   }
+  // a brand-new prompt: bring it into view once so it cannot be missed
+  const ids=[...(S.perms||[]).map(p=>String(p.id||'')),...(S.qs||[]).map(q=>String(q.id||''))];
+  const fresh=ids.filter(id=>id&&!(S.shownPrompts||{})[id]);
+  if(fresh.length){
+    S.shownPrompts=S.shownPrompts||{};ids.forEach(id=>{if(id)S.shownPrompts[id]=1});
+    const app=$('#app');
+    if(c.children.length&&app&&!app.classList.contains('hide'))try{c.scrollIntoView({block:'center',behavior:'smooth'});return true}catch{}
+  }
+  return false;
 }
 /* ---------- pickers + commands ---------- */
 function pick(items,cb){
